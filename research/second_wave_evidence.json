@@ -1,0 +1,746 @@
+{
+  "scope": "Research of implemented metrics; not product acceptance, AML accuracy, or analyst usefulness.",
+  "generated_at_utc": "2026-09-23T10:16:56.135904+00:00",
+  "revision": "d58551f03d12c819e141c4ccd88c70c176b396d1",
+  "source_sha256": {
+    "starter.py": "51ff76247f96c22f6f9058b636d4da537685377116d51060b2a18f5d445b9268",
+    "hackalem/__init__.py": "be6e23bd4be5073bbfd5d0473b65bb4526c9e8717fd0eb0e37b758ec07866ad4",
+    "hackalem/clusters.py": "987ed7f1dab35fc6cef70168e47b3ce5a3436841b6bb07e6c25562dac7dcdb91",
+    "hackalem/exports.py": "1b4de30c8834c1f5d2769962ed6a350b74d449340403ba54ab04a54b2211e24f",
+    "hackalem/graph.py": "d919e5dfc509ee1a93b9d0879d3b101b9b5e70895e1494caffbb9a44e669bbfc",
+    "hackalem/html.py": "a04b6dd085b45f7af4ebd3bb2e181b6126d1e75eceffd96cec99e57abac9b43c",
+    "hackalem/pipeline.py": "667a9e867073aee8d7fe86c384e452dbfb885489972bcb5b1fc8d8c974582712",
+    "hackalem/report.py": "ed5a9fba590219a32b9ede3f2dbaebd1b3cdd04b90656a695473898066259843",
+    "hackalem/scoring.py": "4615e9cd007f72609de28f08abb7f05bed14e4226f5f334d530109fcb8672faf",
+    "hackalem/validation.py": "531292dc53828819b6233dc140d0453c96213110912e3983f661a7c9e79313dd"
+  },
+  "template_sha256": "55ec3c251044f88f496f5b1c0c2c371600ef209cdd2aa9d45b29379a286e5c9a",
+  "sha256_parquet": {
+    "nodes": "d2a45b0df6e9352832d5fb09839d10b9e23f898156c3bab263b051b31cc0296d",
+    "edges": "4e71dde5cd3115bcb26e91202665532ee6581cf8233a9fc8059ea59fb7358a38",
+    "transactions": "c30c5317b5439591dde86f2058dc47a3d19b2900c055ded994fe547f6fb7e7da"
+  },
+  "environment": {
+    "python": "3.13.3",
+    "platform": "macOS-26.2-arm64-arm-64bit-Mach-O",
+    "pandas": "2.2.3",
+    "numpy": "2.2.6",
+    "networkx": "3.6.1",
+    "pyarrow": "25.0.1"
+  },
+  "dataset": {
+    "nodes": 2248,
+    "edges": 3119,
+    "transactions": 4840,
+    "seeds": 81,
+    "isolates": 19,
+    "wcc_with_isolates": 35,
+    "wcc_without_isolates": 16,
+    "total_tiyn": 36589001201
+  },
+  "roles": {
+    "consolidator": 158,
+    "coordinator": 43,
+    "distributor": 33,
+    "peripheral": 1012,
+    "terminal": 947,
+    "transit": 55
+  },
+  "clusters": {
+    "including_isolates": 89,
+    "with_multiple_seeds": 8,
+    "top20_distinct_clusters": 11,
+    "top20_largest_scc_members": 14
+  },
+  "ranking": {
+    "maximum": 0.965,
+    "nodes_at_maximum": 2,
+    "top20_distinct_exact_scores": 12,
+    "top20_seed_count": 4,
+    "top20_volume_overlap": 9,
+    "top20_role_counts": {
+      "coordinator": 18,
+      "distributor": 2
+    },
+    "top20_matching_consolidator_count": 20,
+    "score_at_rank20": 0.8450000000000001,
+    "nodes_tied_at_cutoff": 3,
+    "component_saturation_counts": {
+      "M": 0,
+      "A": 112,
+      "C": 88,
+      "H": 30
+    },
+    "positive_activity_component_quantiles": {
+      "0.1": 0.6637020036242256,
+      "0.5": 0.786797979276092,
+      "0.9": 0.9533064096159297
+    },
+    "top20": [
+      {
+        "gid": "100000003684369100",
+        "role": "coordinator",
+        "priority_score": 0.965,
+        "is_seed": true,
+        "depth": 0,
+        "cluster_id": 2,
+        "in_deg": 24,
+        "out_deg": 62,
+        "seed_reach_count": 6,
+        "direct_seed_payers": 1,
+        "strict_later_day": 3,
+        "same_day_allowed": 3
+      },
+      {
+        "gid": "100000008346837100",
+        "role": "coordinator",
+        "priority_score": 0.965,
+        "is_seed": false,
+        "depth": 2,
+        "cluster_id": 12,
+        "in_deg": 9,
+        "out_deg": 25,
+        "seed_reach_count": 6,
+        "direct_seed_payers": 0,
+        "strict_later_day": 2,
+        "same_day_allowed": 2
+      },
+      {
+        "gid": "100000000331309100",
+        "role": "coordinator",
+        "priority_score": 0.925,
+        "is_seed": false,
+        "depth": 2,
+        "cluster_id": 10,
+        "in_deg": 5,
+        "out_deg": 99,
+        "seed_reach_count": 4,
+        "direct_seed_payers": 0,
+        "strict_later_day": 1,
+        "same_day_allowed": 1
+      },
+      {
+        "gid": "100000000437046100",
+        "role": "coordinator",
+        "priority_score": 0.925,
+        "is_seed": false,
+        "depth": 2,
+        "cluster_id": 0,
+        "in_deg": 9,
+        "out_deg": 42,
+        "seed_reach_count": 4,
+        "direct_seed_payers": 0,
+        "strict_later_day": 1,
+        "same_day_allowed": 1
+      },
+      {
+        "gid": "100000004156082100",
+        "role": "coordinator",
+        "priority_score": 0.925,
+        "is_seed": false,
+        "depth": 1,
+        "cluster_id": 3,
+        "in_deg": 5,
+        "out_deg": 26,
+        "seed_reach_count": 4,
+        "direct_seed_payers": 1,
+        "strict_later_day": 4,
+        "same_day_allowed": 4
+      },
+      {
+        "gid": "100000008603629100",
+        "role": "coordinator",
+        "priority_score": 0.925,
+        "is_seed": false,
+        "depth": 2,
+        "cluster_id": 8,
+        "in_deg": 19,
+        "out_deg": 61,
+        "seed_reach_count": 4,
+        "direct_seed_payers": 0,
+        "strict_later_day": 1,
+        "same_day_allowed": 1
+      },
+      {
+        "gid": "100000002957787100",
+        "role": "coordinator",
+        "priority_score": 0.9236334232780302,
+        "is_seed": false,
+        "depth": 2,
+        "cluster_id": 0,
+        "in_deg": 4,
+        "out_deg": 34,
+        "seed_reach_count": 4,
+        "direct_seed_payers": 0,
+        "strict_later_day": 0,
+        "same_day_allowed": 0
+      },
+      {
+        "gid": "100000005910114100",
+        "role": "coordinator",
+        "priority_score": 0.917125,
+        "is_seed": false,
+        "depth": 3,
+        "cluster_id": 0,
+        "in_deg": 3,
+        "out_deg": 19,
+        "seed_reach_count": 4,
+        "direct_seed_payers": 0,
+        "strict_later_day": 0,
+        "same_day_allowed": 1
+      },
+      {
+        "gid": "100000000343175100",
+        "role": "coordinator",
+        "priority_score": 0.8978905103395229,
+        "is_seed": true,
+        "depth": 0,
+        "cluster_id": 11,
+        "in_deg": 8,
+        "out_deg": 31,
+        "seed_reach_count": 4,
+        "direct_seed_payers": 1,
+        "strict_later_day": 4,
+        "same_day_allowed": 4
+      },
+      {
+        "gid": "100000001857829100",
+        "role": "coordinator",
+        "priority_score": 0.885,
+        "is_seed": false,
+        "depth": 2,
+        "cluster_id": 8,
+        "in_deg": 6,
+        "out_deg": 16,
+        "seed_reach_count": 3,
+        "direct_seed_payers": 0,
+        "strict_later_day": 1,
+        "same_day_allowed": 1
+      },
+      {
+        "gid": "100000003016635100",
+        "role": "coordinator",
+        "priority_score": 0.885,
+        "is_seed": true,
+        "depth": 0,
+        "cluster_id": 16,
+        "in_deg": 8,
+        "out_deg": 73,
+        "seed_reach_count": 3,
+        "direct_seed_payers": 0,
+        "strict_later_day": 0,
+        "same_day_allowed": 0
+      },
+      {
+        "gid": "100000006866783100",
+        "role": "coordinator",
+        "priority_score": 0.885,
+        "is_seed": true,
+        "depth": 0,
+        "cluster_id": 0,
+        "in_deg": 13,
+        "out_deg": 67,
+        "seed_reach_count": 3,
+        "direct_seed_payers": 0,
+        "strict_later_day": 0,
+        "same_day_allowed": 0
+      },
+      {
+        "gid": "100000008477350100",
+        "role": "coordinator",
+        "priority_score": 0.885,
+        "is_seed": false,
+        "depth": 2,
+        "cluster_id": 0,
+        "in_deg": 11,
+        "out_deg": 39,
+        "seed_reach_count": 3,
+        "direct_seed_payers": 0,
+        "strict_later_day": 2,
+        "same_day_allowed": 2
+      },
+      {
+        "gid": "100000008686313100",
+        "role": "coordinator",
+        "priority_score": 0.885,
+        "is_seed": false,
+        "depth": 1,
+        "cluster_id": 0,
+        "in_deg": 6,
+        "out_deg": 7,
+        "seed_reach_count": 3,
+        "direct_seed_payers": 1,
+        "strict_later_day": 1,
+        "same_day_allowed": 1
+      },
+      {
+        "gid": "100000008547844100",
+        "role": "coordinator",
+        "priority_score": 0.8771249999999999,
+        "is_seed": false,
+        "depth": 2,
+        "cluster_id": 42,
+        "in_deg": 3,
+        "out_deg": 19,
+        "seed_reach_count": 3,
+        "direct_seed_payers": 0,
+        "strict_later_day": 1,
+        "same_day_allowed": 1
+      },
+      {
+        "gid": "100000008547948100",
+        "role": "coordinator",
+        "priority_score": 0.862102688018719,
+        "is_seed": false,
+        "depth": 2,
+        "cluster_id": 4,
+        "in_deg": 6,
+        "out_deg": 26,
+        "seed_reach_count": 3,
+        "direct_seed_payers": 0,
+        "strict_later_day": 2,
+        "same_day_allowed": 2
+      },
+      {
+        "gid": "100000008165763100",
+        "role": "distributor",
+        "priority_score": 0.8537628084917901,
+        "is_seed": false,
+        "depth": 1,
+        "cluster_id": 2,
+        "in_deg": 15,
+        "out_deg": 17,
+        "seed_reach_count": 6,
+        "direct_seed_payers": 1,
+        "strict_later_day": 2,
+        "same_day_allowed": 2
+      },
+      {
+        "gid": "100000008710791100",
+        "role": "distributor",
+        "priority_score": 0.8503180424869103,
+        "is_seed": false,
+        "depth": 2,
+        "cluster_id": 4,
+        "in_deg": 3,
+        "out_deg": 23,
+        "seed_reach_count": 5,
+        "direct_seed_payers": 0,
+        "strict_later_day": 0,
+        "same_day_allowed": 2
+      },
+      {
+        "gid": "100000003242289100",
+        "role": "coordinator",
+        "priority_score": 0.8474113490440556,
+        "is_seed": false,
+        "depth": 2,
+        "cluster_id": 28,
+        "in_deg": 3,
+        "out_deg": 23,
+        "seed_reach_count": 3,
+        "direct_seed_payers": 0,
+        "strict_later_day": 1,
+        "same_day_allowed": 1
+      },
+      {
+        "gid": "100000004400305100",
+        "role": "coordinator",
+        "priority_score": 0.8450000000000001,
+        "is_seed": false,
+        "depth": 2,
+        "cluster_id": 0,
+        "in_deg": 7,
+        "out_deg": 82,
+        "seed_reach_count": 2,
+        "direct_seed_payers": 0,
+        "strict_later_day": 1,
+        "same_day_allowed": 1
+      }
+    ],
+    "weight_sensitivity": [
+      {
+        "component": "M",
+        "factor": 0.8,
+        "top20_overlap": 19
+      },
+      {
+        "component": "M",
+        "factor": 1.2,
+        "top20_overlap": 20
+      },
+      {
+        "component": "A",
+        "factor": 0.8,
+        "top20_overlap": 20
+      },
+      {
+        "component": "A",
+        "factor": 1.2,
+        "top20_overlap": 20
+      },
+      {
+        "component": "C",
+        "factor": 0.8,
+        "top20_overlap": 17
+      },
+      {
+        "component": "C",
+        "factor": 1.2,
+        "top20_overlap": 19
+      },
+      {
+        "component": "H",
+        "factor": 0.8,
+        "top20_overlap": 19
+      },
+      {
+        "component": "H",
+        "factor": 1.2,
+        "top20_overlap": 17
+      }
+    ]
+  },
+  "temporal_reach": {
+    "definition": "Distinct seed-target pairs with a directed route of 1-4 transfers; unlimited waiting within July. Amounts are not traced. Same-day ordering is unknown.",
+    "static_seed_target_pairs": 4219,
+    "static_nodes_with_seed_route": 2198,
+    "static_top20_seed_target_pairs": 77,
+    "strict_later_day": {
+      "seed_target_pairs": 1623,
+      "nodes_with_seed_route": 1220,
+      "nodes_with_fewer_seed_routes_than_static": 1591,
+      "top20_seed_target_pairs": 27,
+      "top20_nodes_with_fewer_seed_routes": 18
+    },
+    "same_day_allowed": {
+      "seed_target_pairs": 1898,
+      "nodes_with_seed_route": 1371,
+      "nodes_with_fewer_seed_routes_than_static": 1453,
+      "top20_seed_target_pairs": 30,
+      "top20_nodes_with_fewer_seed_routes": 18
+    }
+  },
+  "community_stability": [
+    {
+      "resolution": 0.8,
+      "seed": 0,
+      "nonisolated_communities": 69,
+      "disconnected_raw_communities": 2,
+      "adjusted_rand_vs_production": 0.89366952346561
+    },
+    {
+      "resolution": 0.8,
+      "seed": 1,
+      "nonisolated_communities": 67,
+      "disconnected_raw_communities": 0,
+      "adjusted_rand_vs_production": 0.9021734331696823
+    },
+    {
+      "resolution": 0.8,
+      "seed": 2,
+      "nonisolated_communities": 76,
+      "disconnected_raw_communities": 3,
+      "adjusted_rand_vs_production": 0.7469880666173054
+    },
+    {
+      "resolution": 0.8,
+      "seed": 42,
+      "nonisolated_communities": 64,
+      "disconnected_raw_communities": 1,
+      "adjusted_rand_vs_production": 0.8987894112383642
+    },
+    {
+      "resolution": 1.0,
+      "seed": 0,
+      "nonisolated_communities": 72,
+      "disconnected_raw_communities": 2,
+      "adjusted_rand_vs_production": 0.89477955520528
+    },
+    {
+      "resolution": 1.0,
+      "seed": 1,
+      "nonisolated_communities": 71,
+      "disconnected_raw_communities": 0,
+      "adjusted_rand_vs_production": 0.9187397507436936
+    },
+    {
+      "resolution": 1.0,
+      "seed": 2,
+      "nonisolated_communities": 72,
+      "disconnected_raw_communities": 0,
+      "adjusted_rand_vs_production": 0.9377243896848962
+    },
+    {
+      "resolution": 1.0,
+      "seed": 42,
+      "nonisolated_communities": 70,
+      "disconnected_raw_communities": 1,
+      "adjusted_rand_vs_production": 1.0
+    },
+    {
+      "resolution": 1.2,
+      "seed": 0,
+      "nonisolated_communities": 76,
+      "disconnected_raw_communities": 1,
+      "adjusted_rand_vs_production": 0.839653374356355
+    },
+    {
+      "resolution": 1.2,
+      "seed": 1,
+      "nonisolated_communities": 76,
+      "disconnected_raw_communities": 0,
+      "adjusted_rand_vs_production": 0.8841115727458432
+    },
+    {
+      "resolution": 1.2,
+      "seed": 2,
+      "nonisolated_communities": 77,
+      "disconnected_raw_communities": 0,
+      "adjusted_rand_vs_production": 0.9339918353821105
+    },
+    {
+      "resolution": 1.2,
+      "seed": 42,
+      "nonisolated_communities": 79,
+      "disconnected_raw_communities": 1,
+      "adjusted_rand_vs_production": 0.9479323680057983
+    }
+  ],
+  "topological_removal": {
+    "definition": "Remove fixed top-k nodes without reranking. Compare surviving seed/target pairs reachable within 4 hops before vs after; endpoint removal is excluded from denominator. No adaptive rerouting or financial-loss claim.",
+    "methods": {
+      "priority": {
+        "5": {
+          "surviving_seed_target_pairs_before": 4075,
+          "after": 2982,
+          "lost_pair_share": 0.2682208588957055,
+          "largest_wcc_nodes": 1636,
+          "removed_seed_count": 1
+        },
+        "10": {
+          "surviving_seed_target_pairs_before": 3984,
+          "after": 2612,
+          "lost_pair_share": 0.34437751004016065,
+          "largest_wcc_nodes": 1516,
+          "removed_seed_count": 2
+        },
+        "20": {
+          "surviving_seed_target_pairs_before": 2293,
+          "after": 1076,
+          "lost_pair_share": 0.530745747928478,
+          "largest_wcc_nodes": 1173,
+          "removed_seed_count": 4
+        }
+      },
+      "volume": {
+        "5": {
+          "surviving_seed_target_pairs_before": 3504,
+          "after": 2708,
+          "lost_pair_share": 0.2271689497716895,
+          "largest_wcc_nodes": 1620,
+          "removed_seed_count": 2
+        },
+        "10": {
+          "surviving_seed_target_pairs_before": 3491,
+          "after": 2357,
+          "lost_pair_share": 0.3248352907476368,
+          "largest_wcc_nodes": 1466,
+          "removed_seed_count": 2
+        },
+        "20": {
+          "surviving_seed_target_pairs_before": 2374,
+          "after": 1232,
+          "lost_pair_share": 0.481044650379107,
+          "largest_wcc_nodes": 1376,
+          "removed_seed_count": 3
+        }
+      },
+      "betweenness": {
+        "5": {
+          "surviving_seed_target_pairs_before": 2516,
+          "after": 2431,
+          "lost_pair_share": 0.033783783783783786,
+          "largest_wcc_nodes": 1717,
+          "removed_seed_count": 2
+        },
+        "10": {
+          "surviving_seed_target_pairs_before": 2511,
+          "after": 2101,
+          "lost_pair_share": 0.1632815611310235,
+          "largest_wcc_nodes": 1567,
+          "removed_seed_count": 2
+        },
+        "20": {
+          "surviving_seed_target_pairs_before": 2375,
+          "after": 1484,
+          "lost_pair_share": 0.3751578947368421,
+          "largest_wcc_nodes": 1257,
+          "removed_seed_count": 3
+        }
+      }
+    },
+    "uniform_random20_control": {
+      "seed": 42,
+      "runs": 30,
+      "lost_pair_share_min": 0.0004789272030651341,
+      "median": 0.007027015063604914,
+      "max": 0.08576206402293358
+    }
+  },
+  "frontier": {
+    "nodes": 444,
+    "incoming_tiyn": 5667216468,
+    "top5_incoming_share": 0.16739630563905258,
+    "top20_incoming_share": 0.4136368909210334,
+    "nodes_in_global_top20": 0
+  },
+  "ui_edge_width": {
+    "scope": "Evaluate the width formula read in graphEdgeData at the recorded revision; not a browser rendering check.",
+    "formula": "max(1.25, min(4.5, log10(abs(sum_tiyn) + 1)))",
+    "unique_widths": [
+      4.5
+    ],
+    "minimum_edge_kzt": 5000.0,
+    "maximum_edge_kzt": 4400000.0
+  },
+  "representative_explanations": {
+    "consolidator": {
+      "gid": "100000003115284100",
+      "evidence": "consolidator; P=0.829; M=0.900, A=1.000, C=1.000, H=0.096; V=2677500.00 KZT, S=9, B=0.0001278. Ограничение: учтены только наблюдаемые переводы.",
+      "why": "P=0.829; вклад: поддержка роли=0.315, наблюдаемый объём=0.300. Ограничение: учтены только наблюдаемые переводы.",
+      "in_deg": 8,
+      "out_deg": 2,
+      "in_kzt": 2160500.0,
+      "out_kzt": 517000.0,
+      "days_after_last_in": 12
+    },
+    "coordinator": {
+      "gid": "100000003684369100",
+      "evidence": "coordinator; P=0.965; M=0.900, A=1.000, C=1.000, H=1.000; V=12437091.00 KZT, S=6, B=0.002303. Ограничение: входящие связи seed могут быть неполными.",
+      "why": "P=0.965; вклад: поддержка роли=0.315, наблюдаемый объём=0.300. Ограничение: входящие связи seed могут быть неполными.",
+      "in_deg": 24,
+      "out_deg": 62,
+      "in_kzt": 3848436.0,
+      "out_kzt": 8588655.0,
+      "days_after_last_in": 3
+    },
+    "distributor": {
+      "gid": "100000008165763100",
+      "evidence": "distributor; P=0.854; M=0.900, A=1.000, C=1.000, H=0.258; V=2433673.00 KZT, S=6, B=0.0003453. Ограничение: учтены только наблюдаемые переводы.",
+      "why": "P=0.854; вклад: поддержка роли=0.315, наблюдаемый объём=0.300. Ограничение: учтены только наблюдаемые переводы.",
+      "in_deg": 15,
+      "out_deg": 17,
+      "in_kzt": 1165815.0,
+      "out_kzt": 1267858.0,
+      "days_after_last_in": 3
+    },
+    "peripheral": {
+      "gid": "100000001937767100",
+      "evidence": "peripheral; P=0.506; M=0.000, A=1.000, C=1.000, H=0.042; V=1986000.00 KZT, S=5, B=5.67e-05. Ограничение: учтены только наблюдаемые переводы.",
+      "why": "P=0.506; вклад: наблюдаемый объём=0.300, охват seed=0.200. Ограничение: учтены только наблюдаемые переводы.",
+      "in_deg": 1,
+      "out_deg": 4,
+      "in_kzt": 53000.0,
+      "out_kzt": 1933000.0,
+      "days_after_last_in": 17
+    },
+    "terminal": {
+      "gid": "100000001584286100",
+      "evidence": "terminal; P=0.661; M=0.500, A=0.952, C=1.000, H=0.000; V=738699.00 KZT, S=5, B=0. Ограничение: учтены только наблюдаемые переводы.",
+      "why": "P=0.661; вклад: наблюдаемый объём=0.286, охват seed=0.200. Ограничение: учтены только наблюдаемые переводы.",
+      "in_deg": 2,
+      "out_deg": 0,
+      "in_kzt": 738699.0,
+      "out_kzt": 0.0,
+      "days_after_last_in": 14
+    },
+    "transit": {
+      "gid": "100000003299365100",
+      "evidence": "transit; P=0.660; M=0.650, A=0.909, C=0.800, H=0.000; V=400000.00 KZT, S=4, B=0. Ограничение: учтены только наблюдаемые переводы.",
+      "why": "P=0.660; вклад: наблюдаемый объём=0.273, поддержка роли=0.227. Ограничение: учтены только наблюдаемые переводы.",
+      "in_deg": 1,
+      "out_deg": 1,
+      "in_kzt": 200000.0,
+      "out_kzt": 200000.0,
+      "days_after_last_in": 5
+    }
+  },
+  "production_parameters": {
+    "roles": {
+      "precedence": [
+        "coordinator",
+        "distributor",
+        "consolidator",
+        "transit",
+        "terminal",
+        "peripheral"
+      ],
+      "quantile_method": "linear",
+      "coordinator": {
+        "seed_reach_count_min": 2,
+        "in_deg_min": 2,
+        "out_deg_min": 2,
+        "betweenness_positive_quantile": 0.9,
+        "betweenness_threshold": 0.00048324374418048645,
+        "support_cap": 0.6,
+        "u": "min(1, seed_reach_count / 4)"
+      },
+      "distributor": {
+        "out_deg_min": 10,
+        "support_cap": 0.9,
+        "u": "min(1, out_deg / 20)"
+      },
+      "consolidator": {
+        "in_deg_min": 3,
+        "support_cap": 0.9,
+        "u": "min(1, in_deg / 6)"
+      },
+      "transit": {
+        "is_seed": false,
+        "depth_max_exclusive": 4,
+        "pass_through_min": 0.8,
+        "pass_through_max": 1.2,
+        "support_cap": 0.65,
+        "u": "max(0, 1 - abs(pass_through - 1) / 0.2)"
+      },
+      "terminal": {
+        "is_seed": false,
+        "depth_max_exclusive": 4,
+        "in_tiyn_min_exclusive": 0,
+        "out_deg": 0,
+        "days_after_last_in_min": 2,
+        "support_cap": 0.5,
+        "u": "min(1, days_after_last_in / 7)"
+      },
+      "support_formula": "cap * (0.5 + 0.5 * u)"
+    },
+    "priority": {
+      "rule_version": "1.0",
+      "weights": {
+        "M": 0.35,
+        "A": 0.3,
+        "C": 0.2,
+        "H": 0.15
+      },
+      "volume_definition": "(in_tiyn + out_tiyn) / 100, in KZT",
+      "volume_quantile": 0.95,
+      "volume_quantile_method": "linear",
+      "volume_q95_kzt": 1451986.399999999,
+      "component_formulas": {
+        "M": "max(matched_roles.support), or 0 when there are no matches",
+        "A": "min(1, log1p(V_kzt) / log1p(Q95(V_kzt > 0)))",
+        "C": "min(1, seed_reach_count / 5)",
+        "H": "min(1, betweenness / Q95(betweenness > 0))"
+      },
+      "betweenness_quantile": 0.95,
+      "betweenness_quantile_method": "linear",
+      "betweenness_q95_positive": 0.0013361804007553844,
+      "priority_formula": "0.35*M + 0.30*A + 0.20*C + 0.15*H",
+      "sort_order": [
+        "priority_score desc (unrounded)",
+        "numeric gid asc"
+      ]
+    }
+  }
+}

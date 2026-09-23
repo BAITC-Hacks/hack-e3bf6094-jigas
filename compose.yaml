@@ -1,6 +1,6 @@
 services:
   prepare:
-    image: jigas-graph-money:local
+    image: ${HACKALEM_IMAGE:-jigas-graph-money:local}
     entrypoint: ["python", "scripts/prepare_data.py"]
     command: []
     volumes:
@@ -9,8 +9,8 @@ services:
 
   pipeline:
     build: .
-    image: jigas-graph-money:local
-    cpus: 12
+    image: ${HACKALEM_IMAGE:-jigas-graph-money:local}
+    cpus: ${HACKALEM_CPUS:-12}
     volumes:
       - ./data:/app/data:ro
       - ./out:/app/out
