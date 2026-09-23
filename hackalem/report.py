@@ -38,8 +38,17 @@ def build_report(
     clusters: pd.DataFrame,
     metadata: dict,
     parameters: dict,
+    daily_profiles_by_gid: dict[str, list[dict]] | None = None,
 ) -> dict:
     """Build the single strict-JSON report object consumed by the HTML and CSVs."""
+    observed_feature_columns = ("n_seed_payers", "sync_payers_max", "fanout_burst_max")
+    present_observed_columns = [column in df.columns for column in observed_feature_columns]
+    if any(present_observed_columns) and not all(present_observed_columns):
+        raise ValueError("report observed node features must be supplied together")
+    has_observed_features = all(present_observed_columns)
+    if has_observed_features != (daily_profiles_by_gid is not None):
+        raise ValueError("report observed node features and daily profiles must be supplied together")
+
     node_columns = [
         "gid", "role", "role_score", "cluster_id", "priority_score", "evidence",
         "depth", "is_seed", "in_deg", "out_deg", "in_tiyn", "out_tiyn",
@@ -47,6 +56,8 @@ def build_report(
         "seed_reach_count", "betweenness", "last_in", "days_after_last_in",
         "matched_roles", "score_components", "why",
     ]
+    if has_observed_features:
+        node_columns.extend(observed_feature_columns)
     missing_nodes = [column for column in node_columns if column not in df.columns]
     if missing_nodes:
         raise ValueError(f"report nodes are missing columns: {', '.join(missing_nodes)}")
@@ -143,6 +154,12 @@ def build_report(
             if abs(amount) > 2**53 - 1:
                 raise ValueError(f"nodes[{gid}].{column} exceeds the safe JSON integer range")
             node[column] = amount
+        if has_observed_features:
+            for column in observed_feature_columns:
+                amount = _exact_int(values[column], f"nodes[{gid}].{column}")
+                if amount < 0:
+                    raise ValueError(f"nodes[{gid}].{column} cannot be negative")
+                node[column] = amount
         node_records.append(node)
 
     edge_columns = ["src", "dst", "sum_tiyn", "n_tx", "depth"]
@@ -199,6 +216,76 @@ def build_report(
 
     nodes_by_gid = {int(node["gid"]): node for node in node_records}
     cluster_by_gid = {gid: int(node["cluster_id"]) for gid, node in nodes_by_gid.items()}
+    normalized_daily_profiles = None
+    if has_observed_features:
+        expected_profile_keys = {str(gid) for gid in nodes_by_gid}
+        if not isinstance(daily_profiles_by_gid, dict) or set(daily_profiles_by_gid) != expected_profile_keys:
+            raise ValueError("daily_profiles_by_gid must contain exactly one string key for every node")
+
+        profile_fields = {
+            "date", "in_tiyn", "out_tiyn", "in_tx", "out_tx", "n_payers", "n_payees",
+        }
+        normalized_daily_profiles = {}
+        seed_payers_by_gid = {gid: set() for gid in nodes_by_gid}
+        for edge in edge_records:
+            src = int(edge["src"])
+            dst = int(edge["dst"])
+            if src not in nodes_by_gid or dst not in nodes_by_gid:
+                raise ValueError("report edge endpoint is missing from report nodes")
+            if nodes_by_gid[src]["is_seed"]:
+                seed_payers_by_gid[dst].add(src)
+
+        for gid in sorted(nodes_by_gid):
+            key = str(gid)
+            records = daily_profiles_by_gid[key]
+            if not isinstance(records, list):
+                raise ValueError(f"daily_profiles_by_gid[{key}] must be an array")
+            previous_date = None
+            sums = {"in_tiyn": 0, "out_tiyn": 0, "in_tx": 0, "out_tx": 0}
+            max_payers = 0
+            max_payees = 0
+            normalized_records = []
+            for position, record in enumerate(records):
+                if not isinstance(record, dict) or set(record) != profile_fields:
+                    raise ValueError(f"daily_profiles_by_gid[{key}][{position}] has an invalid shape")
+                day = record["date"]
+                parsed_day = pd.to_datetime(day, errors="coerce") if isinstance(day, str) else pd.NaT
+                if pd.isna(parsed_day) or parsed_day.strftime("%Y-%m-%d") != day:
+                    raise ValueError(f"daily_profiles_by_gid[{key}][{position}].date must be YYYY-MM-DD")
+                if previous_date is not None and day <= previous_date:
+                    raise ValueError(f"daily_profiles_by_gid[{key}] dates must be unique and ascending")
+                previous_date = day
+
+                normalized_record = {"date": day}
+                for field in ("in_tiyn", "out_tiyn", "in_tx", "out_tx", "n_payers", "n_payees"):
+                    amount = _exact_int(record[field], f"daily_profiles_by_gid[{key}][{position}].{field}")
+                    if amount < 0:
+                        raise ValueError(f"daily_profiles_by_gid[{key}][{position}].{field} cannot be negative")
+                    if field in ("in_tiyn", "out_tiyn") and amount > 2**53 - 1:
+                        raise ValueError(f"daily_profiles_by_gid[{key}][{position}].{field} exceeds the safe JSON integer range")
+                    normalized_record[field] = amount
+                    if field in sums:
+                        sums[field] += amount
+                if normalized_record["n_payers"] > normalized_record["in_tx"]:
+                    raise ValueError(f"daily_profiles_by_gid[{key}][{position}].n_payers exceeds in_tx")
+                if normalized_record["n_payees"] > normalized_record["out_tx"]:
+                    raise ValueError(f"daily_profiles_by_gid[{key}][{position}].n_payees exceeds out_tx")
+                max_payers = max(max_payers, normalized_record["n_payers"])
+                max_payees = max(max_payees, normalized_record["n_payees"])
+                normalized_records.append(normalized_record)
+
+            node = nodes_by_gid[gid]
+            for field, total in sums.items():
+                if total != _exact_int(node[field], f"nodes[{gid}].{field}"):
+                    raise ValueError(f"daily {field} does not match node {gid} aggregate")
+            if len(seed_payers_by_gid[gid]) != node["n_seed_payers"]:
+                raise ValueError(f"nodes[{gid}].n_seed_payers does not match direct seed predecessors")
+            if max_payers != node["sync_payers_max"]:
+                raise ValueError(f"nodes[{gid}].sync_payers_max does not match daily profiles")
+            if max_payees != node["fanout_burst_max"]:
+                raise ValueError(f"nodes[{gid}].fanout_burst_max does not match daily profiles")
+            normalized_daily_profiles[key] = normalized_records
+
     summary_cluster_ids = {cluster["cluster_id"] for cluster in cluster_records}
     if set(cluster_by_gid.values()) != summary_cluster_ids:
         raise ValueError("report cluster summaries must cover exactly the assigned clusters")
@@ -259,5 +346,7 @@ def build_report(
         "clusters": cluster_records,
         "top_nodes": top_records,
     }
+    if normalized_daily_profiles is not None:
+        report["daily_profiles_by_gid"] = normalized_daily_profiles
     json.dumps(report, ensure_ascii=False, allow_nan=False)
     return report
