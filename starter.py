@@ -495,7 +495,7 @@ def compute_priority(df: pd.DataFrame):
         elif bool(row.isolated):
             limitation = "нет наблюдаемых рёбер"
         elif bool(row.is_seed):
-            limitation = "исходящие связи seed могут быть неполными"
+            limitation = "входящие связи seed могут быть неполными"
         elif reach_count == 0:
             limitation = "seed не достигнут за 1–4 шага"
         else:
