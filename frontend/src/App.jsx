@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import GraphView from './components/GraphView.jsx';
+import TemporalRoutes from './components/TemporalRoutes.jsx';
 import { formatInteger, formatPeriod, formatScore, formatTiyn, loadReport, ruleFacts, warningText } from './report.js';
 import { filterTopNodes, matchesGraphFilters, nodesWithExactPriority } from './graphModel.js';
 
@@ -221,7 +222,7 @@ function CopyGidButton({ gid }) {
   return <button className="copy-button" type="button" onClick={copyGid} aria-label={`Скопировать полный ID ${gid}`}>{label}</button>;
 }
 
-function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, parameters, selectedGid, onSelect }) {
+function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, parameters, selectedGid, onSelect, routes, onShowRoute }) {
   if (!node) {
     return <section className="panel detail-panel" aria-labelledby="detail-title"><div className="empty-state"><strong id="detail-title">Выберите клиента</strong><span>Найдите точный ID или выберите клиента на графе, в топе или в кластере.</span></div></section>;
   }
@@ -259,6 +260,7 @@ function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, paramet
           : 'Состав факторов не приложен к этому отчёту. Доступные исходные данные — ниже.'}</p>}
       </div>
       <div className="observed-facts"><strong>Что видно в выборке</strong><ul>{clientFacts(node).map((fact) => <li key={fact}>{fact}</li>)}</ul></div>
+      <TemporalRoutes node={node} routes={routes} onSelect={onSelect} onShowRoute={onShowRoute} />
       {warnings.length > 0 ? (
         <div className="warning-block"><strong>Ограничения для этого клиента</strong><ul>{warnings.map((warning, index) => <li key={`${warning?.code || warning}-${index}`}>{warningText(warning)}</li>)}</ul></div>
       ) : <p className="no-warning">Для клиента нет отдельных предупреждений. Общие ограничения отчёта остаются в силе.</p>}
@@ -367,6 +369,7 @@ export default function App() {
   const [loadError, setLoadError] = useState('');
   const [retryKey, setRetryKey] = useState(0);
   const [selectedGid, setSelectedGid] = useState(null);
+  const [routeMode, setRouteMode] = useState(null);
   const [searchDraft, setSearchDraft] = useState('');
   const [searchMessage, setSearchMessage] = useState('');
   const [filters, setFilters] = useState({ role: 'all', roleMode: 'primary', cluster: 'all', seedMode: 'all', graphScope: 'neighborhood', colorMode: 'role' });
@@ -385,6 +388,7 @@ export default function App() {
 
   function selectGid(gid) {
     setSelectedGid(gid);
+    setRouteMode(null);
     setSearchDraft(gid ?? '');
     setSearchMessage('');
   }
@@ -401,6 +405,12 @@ export default function App() {
   function selectFromGraph(gid) {
     if (window.matchMedia('(max-width: 900px)').matches) selectAndReveal(gid);
     else selectGid(gid);
+  }
+
+  function showRoute(mode) {
+    setRouteMode(mode);
+    setFilters((current) => ({ ...current, graphScope: 'full', role: 'all', cluster: 'all', seedMode: 'all' }));
+    document.getElementById('graph-title')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
 
   function searchExact(event) {
@@ -458,8 +468,8 @@ export default function App() {
           <nav className="workspace-nav" aria-label="Разделы анализа"><a href="#detail-title">Карточка</a><a href="#graph-title">Связи</a><a href="#top-title">Клиенты</a></nav>
           <section className="analysis-workspace" aria-label="Рабочая область анализа">
             <TopNodes topNodes={filteredTopNodes} allNodes={report.nodes} nodeIndex={nodeIndex} topRankByGid={topRankByGid} parameters={report.parameters} filters={filters} selectedGid={selectedGid} onSelect={selectAndReveal} />
-            <GraphView report={report} selectedGid={selectedGid} onSelectGid={selectFromGraph} filters={filters} onFiltersChange={setFilters} />
-            <NodeDetails node={selectedNode} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} tiedNodes={tiedNodes} topRankByGid={topRankByGid} parameters={report.parameters} selectedGid={selectedGid} onSelect={selectAndReveal} />
+            <GraphView report={report} selectedGid={selectedGid} onSelectGid={selectFromGraph} filters={filters} onFiltersChange={setFilters} routeSteps={routeMode && report.seed_routes_by_gid?.[selectedGid]?.[routeMode]?.steps} />
+            <NodeDetails node={selectedNode} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} tiedNodes={tiedNodes} topRankByGid={topRankByGid} parameters={report.parameters} selectedGid={selectedGid} onSelect={selectAndReveal} routes={report.seed_routes_by_gid} onShowRoute={showRoute} />
           </section>
         </>
       )}

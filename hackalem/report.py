@@ -38,6 +38,7 @@ def build_report(
     clusters: pd.DataFrame,
     metadata: dict,
     parameters: dict,
+    seed_routes_by_gid: dict | None = None,
 ) -> dict:
     """Build the single strict-JSON report object consumed by the HTML and CSVs."""
     node_columns = [
@@ -47,6 +48,8 @@ def build_report(
         "seed_reach_count", "betweenness", "last_in", "days_after_last_in",
         "matched_roles", "score_components", "why",
     ]
+    if seed_routes_by_gid is not None:
+        node_columns += ["seed_reach_strict_count", "seed_reach_same_day_count"]
     missing_nodes = [column for column in node_columns if column not in df.columns]
     if missing_nodes:
         raise ValueError(f"report nodes are missing columns: {', '.join(missing_nodes)}")
@@ -134,6 +137,12 @@ def build_report(
         node["gid"] = str(gid)
         node["cluster_id"] = cluster_id
         node["warnings"] = warnings
+        if seed_routes_by_gid is not None:
+            strict = _exact_int(values["seed_reach_strict_count"], f"nodes[{gid}].seed_reach_strict_count")
+            same_day = _exact_int(values["seed_reach_same_day_count"], f"nodes[{gid}].seed_reach_same_day_count")
+            monthly = _exact_int(values["seed_reach_count"], f"nodes[{gid}].seed_reach_count")
+            if not 0 <= strict <= same_day <= monthly:
+                raise ValueError(f"nodes[{gid}] temporal reach exceeds monthly reach")
         for column in ("role_score", "priority_score"):
             score = node[column]
             if score is None or not np.isfinite(score) or not 0 <= score <= 1:
@@ -259,5 +268,16 @@ def build_report(
         "clusters": cluster_records,
         "top_nodes": top_records,
     }
+    if seed_routes_by_gid is not None:
+        if set(seed_routes_by_gid) != {node["gid"] for node in node_records}:
+            raise ValueError("seed_routes_by_gid must cover exactly report nodes")
+        for node in node_records:
+            route_modes = seed_routes_by_gid[node["gid"]]
+            if set(route_modes) != {"strict", "same_day"}:
+                raise ValueError(f"seed_routes_by_gid[{node['gid']}] must have both modes")
+            for mode, count_key in (("strict", "seed_reach_strict_count"), ("same_day", "seed_reach_same_day_count")):
+                if (route_modes[mode] is None) != (node[count_key] == 0):
+                    raise ValueError(f"seed_routes_by_gid[{node['gid']}].{mode} contradicts count")
+        report["seed_routes_by_gid"] = seed_routes_by_gid
     json.dumps(report, ensure_ascii=False, allow_nan=False)
     return report

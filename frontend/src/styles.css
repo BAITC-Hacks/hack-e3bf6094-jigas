@@ -52,6 +52,20 @@ h2 { margin: 0; color: var(--navy); font-size: 18px; font-weight: 720; letter-sp
 .scope-note summary span { color: var(--accent); white-space: nowrap; }
 .scope-note[open] summary { margin-bottom: 7px; }
 .scope-note p { max-width: 95ch; margin: 0; font-size: 12px; }
+.temporal-routes { margin: 14px 18px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #f9fcfb; }
+.temporal-routes > summary { color: var(--accent); font-weight: 700; cursor: pointer; }
+.temporal-routes[open] > summary { margin-bottom: 12px; }
+.temporal-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.temporal-counts > div { display: grid; gap: 2px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: white; }
+.temporal-counts span, .temporal-route p, .temporal-caveat { color: var(--muted); font-size: 13px; }
+.temporal-counts strong { color: var(--navy); font-size: 16px; }
+.temporal-route { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.temporal-route-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.temporal-route p { margin: 7px 0; }
+.temporal-steps { margin: 8px 0; padding-left: 24px; }
+.temporal-steps li { margin: 6px 0; font-size: 13px; overflow-wrap: anywhere; }
+.temporal-steps span { color: var(--faint); }
+.temporal-caveat { margin: 14px 0 0; }
 .panel { min-width: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: var(--shadow); }
 .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 19px 15px; }
 .panel-footnote { padding: 0 19px 15px; margin: 0; color: var(--faint); font-size: 10px; }

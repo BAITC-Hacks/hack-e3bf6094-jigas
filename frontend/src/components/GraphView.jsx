@@ -105,6 +105,8 @@ const GRAPH_STYLE = [
     'target-arrow-shape': 'triangle', 'arrow-scale': 0.9, 'curve-style': 'bezier', opacity: 'data(opacity)',
   } },
   { selector: 'edge:selected', style: { 'line-color': '#286f69', 'target-arrow-color': '#286f69', opacity: 1 } },
+  { selector: '.route-node', style: { 'border-color': '#d16c2e', 'border-width': 6 } },
+  { selector: '.route-edge', style: { 'line-color': '#d16c2e', 'target-arrow-color': '#d16c2e', width: 5, opacity: 1 } },
 ];
 
 function graphPositions(graph, graphScope) {
@@ -191,7 +193,7 @@ function updateFilter(onFiltersChange, key, value) {
   onFiltersChange((current) => ({ ...current, [key]: value }));
 }
 
-export default function GraphView({ report, selectedGid, onSelectGid, filters, onFiltersChange }) {
+export default function GraphView({ report, selectedGid, onSelectGid, filters, onFiltersChange, routeSteps }) {
   const containerRef = useRef(null);
   const cyRef = useRef(null);
   const onSelectRef = useRef(onSelectGid);
@@ -320,6 +322,19 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
     setGraphTooltip(null);
     return () => window.cancelAnimationFrame(frame);
   }, [graphKey, edgeWidthScale]);
+
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return undefined;
+    cy.elements().removeClass('route-node route-edge');
+    if (!Array.isArray(routeSteps) || routeSteps.length === 0) return undefined;
+    const ids = new Set(routeSteps.flatMap((step) => [step.src, step.dst]));
+    const pairs = new Set(routeSteps.map((step) => `${step.src}|${step.dst}`));
+    const nodes = cy.nodes().filter((node) => ids.has(node.id())).addClass('route-node');
+    const edges = cy.edges().filter((edge) => pairs.has(`${edge.source().id()}|${edge.target().id()}`)).addClass('route-edge');
+    const frame = window.requestAnimationFrame(() => { if (nodes.length) cy.fit(nodes.union(edges), 55); });
+    return () => window.cancelAnimationFrame(frame);
+  }, [routeSteps, graphKey]);
 
   useEffect(() => {
     const cy = cyRef.current;
