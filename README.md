@@ -8,6 +8,8 @@ Jigas помогает AML-аналитику разобраться в сети
 
 <img width="1512" height="827" alt="image" src="https://github.com/user-attachments/assets/d43bf1e5-e716-4844-80a9-cfa17113d38d" />
 
+<img width="1512" height="826" alt="image" src="https://github.com/user-attachments/assets/8f7b8995-38b5-43a4-907b-bffad703938c" />
+
 
 ## Что делает решение
 
