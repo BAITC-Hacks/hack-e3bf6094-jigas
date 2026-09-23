@@ -16,7 +16,7 @@ import uuid
 from .validation import load, sanity_check
 from .graph import build_graph, basic_features, enrich_features, enrich_observed_features
 from .scoring import assign_roles, compute_priority
-from .clusters import LOUVAIN_RESOLUTION, LOUVAIN_SEED, cluster_nodes, summarize_clusters
+from .clusters import LOUVAIN_RESOLUTION, LOUVAIN_SEED, cluster_nodes, summarize_clusters, summarize_structure
 from .report import build_report
 from .exports import write_outputs
 from .html import stage_viewer
@@ -69,6 +69,7 @@ def run_pipeline(data_dir: Path, out_dir: Path) -> dict:
         features = features.copy()
         features["cluster_id"] = features["gid"].map(cluster_nodes(graph))
         clusters = summarize_clusters(graph, features)
+        features, structure = summarize_structure(graph, features)
         timings["clusters_seconds"] = time.perf_counter() - checkpoint
 
         phase = "source_hashes"
@@ -118,6 +119,7 @@ def run_pipeline(data_dir: Path, out_dir: Path) -> dict:
             metadata,
             parameters,
             daily_profiles_by_gid=daily_profiles_by_gid,
+            structure=structure,
         )
         timings["report_seconds"] = time.perf_counter() - checkpoint
 

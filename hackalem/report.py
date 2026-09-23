@@ -39,6 +39,7 @@ def build_report(
     metadata: dict,
     parameters: dict,
     daily_profiles_by_gid: dict[str, list[dict]] | None = None,
+    structure: dict | None = None,
 ) -> dict:
     """Build the single strict-JSON report object consumed by the HTML and CSVs."""
     observed_feature_columns = ("n_seed_payers", "sync_payers_max", "fanout_burst_max")
@@ -48,6 +49,12 @@ def build_report(
     has_observed_features = all(present_observed_columns)
     if has_observed_features != (daily_profiles_by_gid is not None):
         raise ValueError("report observed node features and daily profiles must be supplied together")
+    structure_columns = ("n_payer_comms", "scc_id", "scc_size")
+    present_structure_columns = [column in df.columns for column in structure_columns]
+    if any(present_structure_columns) and not all(present_structure_columns):
+        raise ValueError("report structure node fields must be supplied together")
+    if all(present_structure_columns) != (structure is not None):
+        raise ValueError("report structure and node fields must be supplied together")
 
     node_columns = [
         "gid", "role", "role_score", "cluster_id", "priority_score", "evidence",
@@ -58,6 +65,8 @@ def build_report(
     ]
     if has_observed_features:
         node_columns.extend(observed_feature_columns)
+    if structure is not None:
+        node_columns.extend(structure_columns)
     missing_nodes = [column for column in node_columns if column not in df.columns]
     if missing_nodes:
         raise ValueError(f"report nodes are missing columns: {', '.join(missing_nodes)}")
@@ -156,6 +165,12 @@ def build_report(
             node[column] = amount
         if has_observed_features:
             for column in observed_feature_columns:
+                amount = _exact_int(values[column], f"nodes[{gid}].{column}")
+                if amount < 0:
+                    raise ValueError(f"nodes[{gid}].{column} cannot be negative")
+                node[column] = amount
+        if structure is not None:
+            for column in structure_columns:
                 amount = _exact_int(values[column], f"nodes[{gid}].{column}")
                 if amount < 0:
                     raise ValueError(f"nodes[{gid}].{column} cannot be negative")
@@ -348,5 +363,9 @@ def build_report(
     }
     if normalized_daily_profiles is not None:
         report["daily_profiles_by_gid"] = normalized_daily_profiles
+    if structure is not None:
+        if set(structure) != {"community_edges", "sccs", "coverage"}:
+            raise ValueError("structure must contain community_edges, sccs and coverage")
+        report.update(_json_safe(structure))
     json.dumps(report, ensure_ascii=False, allow_nan=False)
     return report

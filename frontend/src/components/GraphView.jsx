@@ -37,11 +37,12 @@ function clusterColor(clusterId) {
   return '#' + channels.map((channel) => Math.round((channel + match) * 255).toString(16).padStart(2, '0')).join('');
 }
 
-function buildNodeItem(node, colorMode, position) {
+function buildNodeItem(node, colorMode, position, sccFocusId) {
   const color = colorMode === 'cluster'
     ? clusterColor(node.cluster_id)
     : ROLE_COLORS[node.role] || '#687983';
-  const border = node.boundary === true ? '#bb6e30' : node.isolated === true ? '#53636b' : '#ffffff';
+  const focused = sccFocusId !== null && node.scc_id === sccFocusId;
+  const border = focused ? '#1a7b70' : node.boundary === true ? '#bb6e30' : node.isolated === true ? '#53636b' : '#ffffff';
   const shape = node.isolated === true ? 'triangle' : node.is_seed === true ? 'diamond' : 'ellipse';
   const nodeTitle = [
     'ID: ' + node.gid,
@@ -61,15 +62,18 @@ function buildNodeItem(node, colorMode, position) {
       border,
       shape,
       size: node.is_seed === true ? 30 : 24,
-      borderWidth: node.boundary === true || node.isolated === true ? 4 : 2,
+      borderWidth: focused || node.boundary === true || node.isolated === true ? 4 : 2,
+      opacity: sccFocusId === null || focused ? 1 : 0.18,
       tooltip: nodeTitle,
     },
     position,
   };
 }
 
-function buildEdgeItem(entry, edgeWidthScale, graphScope) {
+function buildEdgeItem(entry, edgeWidthScale, graphScope, sccFocusId, nodeIndex) {
   const edge = entry.edge;
+  const focused = sccFocusId !== null && nodeIndex.get(edge.src)?.scc_id === sccFocusId
+    && nodeIndex.get(edge.dst)?.scc_id === sccFocusId;
   const amount = typeof edge.sum_tiyn === 'number' ? formatTiyn(edge.sum_tiyn) : '—';
   const count = typeof edge.n_tx === 'number' ? formatInteger(edge.n_tx) : '—';
   return {
@@ -79,7 +83,9 @@ function buildEdgeItem(entry, edgeWidthScale, graphScope) {
       source: edge.src,
       target: edge.dst,
       width: edgeWidthScale(edge.sum_tiyn),
-      opacity: graphScope === 'full' ? 0.22 : 0.8,
+      opacity: sccFocusId !== null ? focused ? 0.85 : 0.08 : graphScope === 'full' ? 0.22 : 0.8,
+      lineColor: focused ? '#2f776c' : '#93a6aa',
+      arrowColor: focused ? '#2f776c' : '#788f95',
       tooltip: [
         'Направление: ' + edge.src + ' → ' + edge.dst,
         'Сумма: ' + amount,
@@ -93,15 +99,16 @@ function buildEdgeItem(entry, edgeWidthScale, graphScope) {
 const GRAPH_STYLE = [
   { selector: 'node', style: {
     'background-color': 'data(color)', 'border-color': 'data(border)', 'border-width': 'data(borderWidth)',
-    shape: 'data(shape)', width: 'data(size)', height: 'data(size)', label: '',
+    shape: 'data(shape)', width: 'data(size)', height: 'data(size)', opacity: 'data(opacity)', label: '',
   } },
   { selector: 'node:selected', style: {
     'border-color': '#173c38', 'border-width': 5, width: 36, height: 36,
+    opacity: 1,
     label: 'data(id)', 'font-size': 13, 'font-weight': 700, 'text-background-color': '#ffffff',
     'text-background-opacity': 0.9, 'text-background-padding': '3px', 'text-margin-y': -23,
   } },
   { selector: 'edge', style: {
-    width: 'data(width)', 'line-color': '#93a6aa', 'target-arrow-color': '#788f95',
+    width: 'data(width)', 'line-color': 'data(lineColor)', 'target-arrow-color': 'data(arrowColor)',
     'target-arrow-shape': 'triangle', 'arrow-scale': 0.9, 'curve-style': 'bezier', opacity: 'data(opacity)',
   } },
   { selector: 'edge:selected', style: { 'line-color': '#286f69', 'target-arrow-color': '#286f69', opacity: 1 } },
@@ -191,7 +198,7 @@ function updateFilter(onFiltersChange, key, value) {
   onFiltersChange((current) => ({ ...current, [key]: value }));
 }
 
-export default function GraphView({ report, selectedGid, onSelectGid, filters, onFiltersChange }) {
+export default function GraphView({ report, selectedGid, onSelectGid, filters, onFiltersChange, sccFocusId = null, onClearScc }) {
   const containerRef = useRef(null);
   const cyRef = useRef(null);
   const onSelectRef = useRef(onSelectGid);
@@ -199,6 +206,7 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
   const [edgePage, setEdgePage] = useState(0);
   const [graphTooltip, setGraphTooltip] = useState(null);
   const [showAllNeighbors, setShowAllNeighbors] = useState(false);
+  const activeSccFocus = filters.graphScope === 'full' ? sccFocusId : null;
 
   onSelectRef.current = onSelectGid;
 
@@ -222,7 +230,7 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
   }, [graph, filters.graphScope, selectedGid, showAllNeighbors]);
   const edgeWidthScale = useMemo(() => createEdgeWidthScale(report.edges), [report.edges]);
   const graphKey = (filters.graphScope === 'full' ? 'full' : selectedGid) + '|'
-    + displayGraph.signature + '|' + filters.graphScope + '|' + filters.colorMode;
+    + displayGraph.signature + '|' + filters.graphScope + '|' + filters.colorMode + '|' + activeSccFocus;
   const clusterOptions = useMemo(() => {
     const values = new Map();
     report.nodes.forEach((node) => {
@@ -305,8 +313,8 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
     const cy = cyRef.current;
     if (!cy) return;
     const positions = graphPositions(displayGraph, filters.graphScope);
-    const nodes = displayGraph.visibleNodes.map((node) => buildNodeItem(node, filters.colorMode, positions.get(node.gid)));
-    const edges = displayGraph.visibleEdges.map((entry) => buildEdgeItem(entry, edgeWidthScale, filters.graphScope));
+    const nodes = displayGraph.visibleNodes.map((node) => buildNodeItem(node, filters.colorMode, positions.get(node.gid), activeSccFocus));
+    const edges = displayGraph.visibleEdges.map((entry) => buildEdgeItem(entry, edgeWidthScale, filters.graphScope, activeSccFocus, graph.nodeIndex));
     cy.batch(() => {
       cy.elements().remove();
       cy.add([...nodes, ...edges]);
@@ -427,6 +435,7 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
       </div>
 
       <div className="graph-statuses" aria-live="polite">
+        {activeSccFocus !== null && <p className="graph-notice">Подсвечена SCC {activeSccFocus}: направленная связность внутри компоненты. <button type="button" className="gid-action" onClick={onClearScc}>Сбросить подсветку</button></p>}
         {graph.selectionOutsideFilters && graph.selectedNode && (
           <p className="graph-notice"><strong>Выбранный клиент не соответствует фильтрам.</strong> Он всё равно показан для контекста; измените фильтры, чтобы увидеть его соседей.</p>
         )}
