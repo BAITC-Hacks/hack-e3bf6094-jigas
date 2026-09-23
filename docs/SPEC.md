@@ -6,7 +6,7 @@
 
 ## 1. Исполнение и файлы
 
-Основной контейнерный запуск на машине команды: `python scripts/prepare_data.py`, `docker compose build`, `docker compose run --rm pipeline`. Равнозначный запуск для эксперта без Docker после установки зависимостей: `python starter.py --data ./data --out ./out`. Оба пути читают те же три Parquet и пишут в `out/`; Docker не должен быть единственным способом проверки.
+Основной контейнерный запуск на машине команды: `docker compose build pipeline`, `docker compose run --rm prepare`, `docker compose run --rm pipeline`. Сервис `prepare` извлекает три Parquet из архива организатора, без Python на хосте. Равнозначный запуск для эксперта без Docker после установки зависимостей: `python scripts/prepare_data.py`, затем `python starter.py --data ./data --out ./out`. Оба пути читают те же три Parquet и пишут в `out/`; Docker не должен быть единственным способом проверки.
 
 Выбранный стек: Docker Compose и Python 3.13, pandas, NumPy, PyArrow, NetworkX; один HTML-шаблон и локальный vis-network. Прямые зависимости зафиксированы в `requirements.txt`: pandas 2.2.3, NumPy 2.2.6, PyArrow 25.0.1, NetworkX 3.6.1. Контейнер с этими версиями собран; окончательную проверку полного приложения выполнить после реализации. Удалить неиспользуемый обязательный PageRank starter, чтобы не оставлять скрытую зависимость от SciPy.
 
