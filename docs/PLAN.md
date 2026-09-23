@@ -34,7 +34,7 @@ A/B/C ниже — контуры ответственности, **не нов�
 
 | Решение | Почему / граница |
 |---|---|
-| Python batch + React/Vite + vis-network | Python пишет CSV/report.json, готовый UI раздаётся через localhost; без внешнего API/аккаунта. Исходный standalone HTML — резерв до приёмки миграции |
+| Python batch + React/Vite + Cytoscape.js | Python пишет CSV/report.json, готовый UI раздаётся через localhost; без внешнего API/аккаунта. Исходный standalone HTML сохранён в истории |
 | Объяснимые правила и Louvain | Ground truth нет; обучение и LLM не входят в P0 |
 | ID только точные int64 / строки | Все ID официального набора теряют точность в float/JS Number |
 | Полный граф, включая изоляты | CSV и поиск должны покрывать все 2 248 узлов |
@@ -176,7 +176,7 @@ C пишет проверку и черновик README одновременн�
 | [HA-12](https://trello.com/c/gQQx1nkD) | Полезность, устойчивость и сравнение вариантов — P1 |
 | [HA-13](https://trello.com/c/VwVrwL8C) | Структурный обзор: сообщества, SCC и покрытие — P1 |
 | [HA-14](https://trello.com/c/rVdViaaN) | Следующий запрос данных и frontier-фильтр — P1 |
-| [HA-15](https://trello.com/c/GwCEb2gh) | React/Vite + vis-network, JSON и localhost — P0; три подзадачи в §11 |
+| [HA-15](https://trello.com/c/GwCEb2gh) | React/Vite, JSON и localhost — P0; граф после UX-review переведён на Cytoscape.js |
 | [HA-17](https://trello.com/c/Juc6WEyU) | Объяснения правил и читаемость графа — P0 |
 | [HA-16](https://trello.com/c/Sc9cfm06) | Маршруты от seed с датами — P1 |
 | [HA-CTX](https://trello.com/c/jhV5X3jU) | Контекст MVP и правила сдачи |
@@ -259,7 +259,7 @@ C пишет проверку и черновик README одновременн�
 | Задача / владелец | Вход и целевые файлы | Конкретный результат и проверка |
 |---|---|---|
 | HA-13.1 / A | Валидированный G, df с cluster_id; `hackalem/clusters.py`: summarize_structure; `hackalem/report.py`, `hackalem/pipeline.py` | Поля/сводки SPEC §10.2 в одном report. Сверить раздельные направления, internal + inter-community = total, SCC с unique external dst, frontier по nodes.depth[dst]. Передать объект и фактическую сверку B/C. |
-| HA-13.2 / B | Объект HA-13.1; `frontend/src/GraphView.jsx`, компоненты/стили, `report.example.json` | Обзор на существующем vis-network, клик по сообществу/стрелке раскрывает исходные узлы/рёбра, SCC — отдельная подсветка. Проверить singleton/no-SCC>1, точный gid и отсутствие блока на P0-примере. Передать готовый просмотр C для финальной приёмки включённого состава. |
+| HA-13.2 / B | Объект HA-13.1; `frontend/src/components/GraphView.jsx`, компоненты/стили, `report.example.json` | Обзор на существующем Cytoscape.js, клик по сообществу/стрелке раскрывает исходные узлы/рёбра, SCC — отдельная подсветка. Проверить singleton/no-SCC>1, точный gid и отсутствие блока на P0-примере. Передать готовый просмотр C для финальной приёмки включённого состава. |
 | HA-14.1 / A | df и daily_profiles_by_gid; `hackalem/requests.py`: build_data_requests; `hackalem/report.py`, `hackalem/pipeline.py` | Список запросов с reason_code по условиям SPEC и отсортированный индекс frontier. Проверить boundary, короткий период, same-day и изолят; суммы/роли/priority совпадают с baseline. Передать B/C. |
 | HA-14.2 / B | Объект HA-14.1; `frontend/src/`, CSS, `report.example.json` | Причина + запрос в существующей карточке; фильтр по полному индексу, исходный priority, ранг только из top_nodes. Проверить узел вне топа, пустой фильтр, изолят, отсутствующий P1-блок и клавиатуру. Передать C и владельцу HA-16.1. |
 | HA-17.1 / A | df, role_parameters/priority_parameters; `hackalem/scoring.py`, сериализация/экспорт и parameters по SPEC §11 | reason всех совпадений, evidence по основной роли, why по ведущим фактам; сверка чисел/порогов/длины и неизменности ролей/P/top-20; передать B/C. |
@@ -299,16 +299,16 @@ C дополняет существующий `test_contract.py` и запись
 
 Публикация и handoff — ветка [docs/second-wave-adoption](https://github.com/BAITC-Hacks/hack-e3bf6094-jigas/tree/docs/second-wave-adoption); интегратор принимает её в main после review по PARALLEL_WORK.md. До интеграции новая редакция читается из этой ветки. HA-00 остаётся на независимом review.
 
-## 11. Миграция интерфейса: React + Vite + vis-network
+## 11. Интерфейс: React + Vite + Cytoscape.js
 
-Принято пользователем 23.09.2026. Цель — перенести управление экраном из ручной сборки DOM в React, сохранив существующую библиотеку графа, поведение и вычисленные данные. Python пишет строгий `report.json` и три CSV; Vite заранее собирает `report.html`/assets; stdlib Python раздаёт out через localhost. Один экран на JSX/CSS и React state. Данные не встраиваются в bundle, P1 остаётся необязательным, schema_version=1.0 и аналитические правила неизменны.
+Принято пользователем 23.09.2026. Управление экраном перенесено из ручной сборки DOM в React; после UX-review растровые кнопки старого графа заменены на управление Cytoscape.js. Python пишет строгий `report.json` и три CSV; Vite заранее собирает одинаковые `index.html`/`report.html` и assets; stdlib Python раздаёт out через localhost, включая корень `/`. Один экран на JSX/CSS и React state. Данные не встраиваются в bundle, P1 остаётся необязательным, schema_version=1.0 и аналитические правила неизменны.
 
 Родитель — [HA-15](https://trello.com/c/GwCEb2gh). Дети первоначально созданы в «Бэклоге», без назначений и отметок готовности; актуальные исполнители/статусы — только на доске. Таймбоксы — оценки работы, календарные пределы остаются из §6.
 
 | Карточка / контур | Вход и файлы | Результат / приёмка | Старт / handoff | Мин |
 |---|---|---|---|---:|
 | [HA-15.1](https://trello.com/c/Rnk792mE) · P0 / B | Текущий шаблон как образец, report.example.json, SPEC §8; `frontend/` и .gitignore | React/Vite JSX, lockfile/Node, loading/error JSON, топ/карточка/кластеры/CSV-ссылки; build даёт report.html/assets; точный большой ID, P0 без P1 | Начать по контракту; передать state selectedGid/фильтры в HA-15.2 и build path в HA-15.3 | 25–35 |
-| [HA-15.2](https://trello.com/c/kpeqbuVO) · P0 / B | Commit HA-15.1, текущий vis-network; `frontend/src/GraphView.jsx`, App/стили | Граф/стрелки, поиск/фильтры, one-hop/full, общая карточка, изолят/пустой отбор; ref/effect + destroy без дублей; реальный browser review | После HA-15.1; финальный smoke на out HA-15.3; передать C и владельцам P1 UI | 25–35 |
+| [HA-15.2](https://trello.com/c/kpeqbuVO) · P0 / B | Commit HA-15.1, графовый компонент; `frontend/src/components/GraphView.jsx`, App/стили | Граф/стрелки, поиск/фильтры, one-hop/full, общая карточка, изолят/пустой отбор; ref/effect + destroy без дублей; реальный browser review | После HA-15.1; финальный smoke на out HA-15.3; передать C и владельцам P1 UI | 25–35 |
 | [HA-15.3](https://trello.com/c/TOLPtvoW) · P0 / интегратор | build_report, CSV и build HA-15.1; `hackalem/pipeline.py`, `html.py`, Dockerfile/compose/.dockerignore | report.json и статика в одном проверенном выпуске; Docker multi-stage + viewer и native localhost; missing build — ошибка; CSV не меняются | Подготовка по контракту, pipeline после handoff A; итог после HA-15.1, совместный smoke с HA-15.2; передать C | 30–40 |
 
 **Общие файлы и вторая волна.** Эта правка подготовлена в отдельном worktree от `aed8e63`; исходники аналитики, текущий UI и `docs/SECOND_WAVE_RESEARCH.md`, `research/second_wave*` не меняются. Исследовательский агент продолжает свою работу. Исполнитель HA-15 получает свежий main перед началом и не меняет имена/смысл аналитических полей. Если параллельный P1 уже расширил report, эти поля должны пережить сериализацию; любые изменения pipeline принимаются по передаче владельца. README и test_contract.py уже закреплены за C, поэтому интегратор передаёт ему команды/стык, а не редактирует их одновременно.

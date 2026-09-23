@@ -10,11 +10,12 @@ def stage_viewer(stage: Path) -> tuple[str, ...]:
     root = Path(__file__).resolve().parents[1]
     build = root / "frontend" / "dist"
     page = build / "report.html"
+    index = build / "index.html"
     asset_dir = build / "assets"
-    if not page.is_file() or page.is_symlink() or not asset_dir.is_dir() or asset_dir.is_symlink():
+    if not page.is_file() or page.is_symlink() or not index.is_file() or index.is_symlink() or not asset_dir.is_dir() or asset_dir.is_symlink():
         raise ValueError("frontend build is missing; run npm --prefix frontend run build")
-    if page.stat().st_size == 0:
-        raise ValueError("frontend build report.html is empty")
+    if page.stat().st_size == 0 or index.read_bytes() != page.read_bytes():
+        raise ValueError("frontend build index.html and report.html must be identical and nonempty")
 
     entries = sorted(asset_dir.rglob("*"))
     files = [path for path in entries if path.is_file()]
@@ -24,6 +25,7 @@ def stage_viewer(stage: Path) -> tuple[str, ...]:
         raise ValueError("release staging assets already exist")
 
     shutil.copy2(page, stage / "report.html")
+    shutil.copy2(index, stage / "index.html")
     shutil.copytree(asset_dir, stage / "assets")
     license_path = root / "assets" / "vis-network.LICENSE.txt"
     if not license_path.is_file():

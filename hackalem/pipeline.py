@@ -23,7 +23,7 @@ from .html import stage_viewer
 
 
 INPUT_FILES = ("nodes.parquet", "edges.parquet", "transactions.parquet")
-OUTPUT_FILES = ("nodes_roles.csv", "clusters.csv", "top_nodes.csv", "report.json", "report.html")
+OUTPUT_FILES = ("nodes_roles.csv", "clusters.csv", "top_nodes.csv", "report.json", "report.html", "index.html")
 
 
 def _sha256(path: Path) -> str:

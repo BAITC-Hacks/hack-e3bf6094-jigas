@@ -563,8 +563,9 @@ def test_release_json_compatibility(starter: Any) -> None:
             "</head><body><script type='module' src='./assets/app.js'></script></body></html>\n",
             encoding="utf-8",
         )
+        (out_dir / "index.html").write_bytes((out_dir / "report.html").read_bytes())
         release_paths = [
-            "nodes_roles.csv", "clusters.csv", "top_nodes.csv", "report.json", "report.html",
+            "nodes_roles.csv", "clusters.csv", "top_nodes.csv", "report.json", "report.html", "index.html",
             "assets/app.js", "assets/app.css", "assets/vis-network.LICENSE.txt",
         ]
         output_hashes = {
@@ -945,6 +946,8 @@ def validate_local_reference(reference: str, base_dir: Path, out_dir: Path, labe
 def validate_release_assets(out_dir: Path, validation: dict[str, Any]) -> None:
     html_path = out_dir / "report.html"
     html = html_path.read_text(encoding="utf-8")
+    require((out_dir / "index.html").read_text(encoding="utf-8") == html,
+            "index.html must serve the same dashboard as report.html")
     require("report-data" not in html and "__REPORT_DATA__" not in html,
             "report.html must load the sibling report.json instead of embedding the payload")
     parser = HtmlResourceParser()
@@ -965,7 +968,7 @@ def validate_release_assets(out_dir: Path, validation: dict[str, Any]) -> None:
     require("report.json" in javascript_bundle.lower(),
             "built JavaScript must request the sibling report.json")
     expected_paths = {
-        "nodes_roles.csv", "clusters.csv", "top_nodes.csv", "report.json", "report.html",
+        "nodes_roles.csv", "clusters.csv", "top_nodes.csv", "report.json", "report.html", "index.html",
         *(path.relative_to(out_dir).as_posix() for path in asset_files),
     }
 
@@ -1428,7 +1431,7 @@ def validate_ha17_explanations(
 
 
 def validate_csv_release(data_dir: Path, out_dir: Path) -> None:
-    for filename in (*REQUIRED_COLUMNS, "report.json", "report.html", "validation.json"):
+    for filename in (*REQUIRED_COLUMNS, "report.json", "report.html", "index.html", "validation.json"):
         require((out_dir / filename).is_file(),
                 f"missing release artifact {out_dir / filename}")
 

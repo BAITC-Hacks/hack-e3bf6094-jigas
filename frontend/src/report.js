@@ -129,3 +129,39 @@ export function warningText(warning) {
   };
   return message || labels[code] || (code ? `Ограничение: ${code}` : 'Ограничение данных.');
 }
+
+function formatDecimal(value, digits = 3) {
+  return Number.isFinite(value)
+    ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: digits }).format(value)
+    : '—';
+}
+
+export function ruleFacts(node, match, parameters) {
+  const limits = parameters?.role_parameters?.[match?.role];
+  if (!match?.reason || !limits) return [];
+  switch (match.role) {
+    case 'coordinator':
+      return [
+        `До клиента доходят пути от ${formatInteger(node.seed_reach_count)} seed-клиентов; для правила нужно не менее ${formatInteger(limits.seed_reach_count_min)}.`,
+        `${formatInteger(node.in_deg)} входящих и ${formatInteger(node.out_deg)} исходящих связей; нужно не менее ${formatInteger(limits.in_deg_min)} входящих и ${formatInteger(limits.out_deg_min)} исходящих.`,
+        `Узел участвует в путях между клиентами: показатель ${formatDecimal(node.betweenness, 8)} выше порога ${formatDecimal(limits.betweenness_threshold, 8)}.`,
+      ];
+    case 'distributor':
+      return [`Переводы идут к ${formatInteger(node.out_deg)} разным получателям; правило срабатывает от ${formatInteger(limits.out_deg_min)}.`];
+    case 'consolidator':
+      return [`Поступления идут от ${formatInteger(node.in_deg)} разных плательщиков; правило срабатывает от ${formatInteger(limits.in_deg_min)}.`];
+    case 'transit':
+      return [
+        `Это не seed-клиент; глубина ${formatInteger(node.depth)} находится до границы ${formatInteger(limits.depth_max_exclusive)}.`,
+        `Наблюдаются вход ${formatTiyn(node.in_tiyn)} и выход ${formatTiyn(node.out_tiyn)}. Отношение выхода к входу — ${formatDecimal(node.pass_through, 2)} при допустимом диапазоне ${formatDecimal(limits.pass_through_min, 2)}–${formatDecimal(limits.pass_through_max, 2)}.`,
+      ];
+    case 'terminal':
+      return [
+        `Это не seed-клиент; глубина ${formatInteger(node.depth)} находится до границы ${formatInteger(limits.depth_max_exclusive)}.`,
+        `Есть входящие переводы на ${formatTiyn(node.in_tiyn)}, а исходящих связей в этой выборке нет.`,
+        `После последнего входящего перевода прошло ${formatInteger(node.days_after_last_in)} дней; порог — ${formatInteger(limits.days_after_last_in_min)}. Это кандидат в конечные, а не подтверждённый конец движения средств.`,
+      ];
+    default:
+      return [];
+  }
+}

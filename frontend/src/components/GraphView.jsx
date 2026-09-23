@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DataSet, Network } from 'vis-network/standalone';
-import 'vis-network/styles/vis-network.css';
+import cytoscape from 'cytoscape';
 import { formatInteger, formatTiyn } from '../report.js';
 import { buildGraphScope, createEdgeWidthScale, NO_CLUSTER_FILTER } from '../graphModel.js';
 
@@ -21,6 +20,7 @@ const ROLE_LABELS = {
   peripheral: 'Периферийный',
 };
 const PAGE_SIZE = 50;
+const NEIGHBORHOOD_EDGE_LIMIT = 32;
 
 function clusterColor(clusterId) {
   if (clusterId === null || clusterId === undefined) return '#89949a';
@@ -37,20 +37,12 @@ function clusterColor(clusterId) {
   return '#' + channels.map((channel) => Math.round((channel + match) * 255).toString(16).padStart(2, '0')).join('');
 }
 
-function tooltip(lines) {
-  const element = document.createElement('div');
-  element.className = 'graph-tooltip';
-  element.textContent = lines.join('\n');
-  return element;
-}
-
-function buildNodeItem(node, selectedGid, colorMode) {
+function buildNodeItem(node, colorMode, position) {
   const color = colorMode === 'cluster'
     ? clusterColor(node.cluster_id)
     : ROLE_COLORS[node.role] || '#687983';
   const border = node.boundary === true ? '#bb6e30' : node.isolated === true ? '#53636b' : '#ffffff';
-  const shape = node.isolated === true ? 'triangle' : node.is_seed === true ? 'diamond' : 'dot';
-  const label = node.gid === selectedGid ? node.gid : '';
+  const shape = node.isolated === true ? 'triangle' : node.is_seed === true ? 'diamond' : 'ellipse';
   const nodeTitle = [
     'ID: ' + node.gid,
     'Роль: ' + (ROLE_LABELS[node.role] || node.role || 'не указана'),
@@ -62,71 +54,137 @@ function buildNodeItem(node, selectedGid, colorMode) {
   ].filter(Boolean);
 
   return {
-    id: node.gid,
-    label,
-    title: tooltip(nodeTitle),
-    shape,
-    size: node.gid === selectedGid ? 21 : node.is_seed === true ? 16 : 13,
-    color: {
-      background: color,
+    group: 'nodes',
+    data: {
+      id: node.gid,
+      color,
       border,
-      highlight: { background: color, border: '#173c38' },
-      hover: { background: color, border: '#173c38' },
+      shape,
+      size: node.is_seed === true ? 30 : 24,
+      borderWidth: node.boundary === true || node.isolated === true ? 4 : 2,
+      tooltip: nodeTitle,
     },
-    borderWidth: node.boundary === true || node.isolated === true ? 3 : 1.5,
-    font: { color: '#23323a', size: 12, face: 'system-ui, sans-serif', strokeWidth: 3, strokeColor: '#ffffff' },
-    chosen: { node: (_values, _id, selected) => { if (selected) _values.borderWidth = 4; } },
+    position,
   };
 }
 
-function buildEdgeItem(entry, edgeWidthScale) {
+function buildEdgeItem(entry, edgeWidthScale, graphScope) {
   const edge = entry.edge;
   const amount = typeof edge.sum_tiyn === 'number' ? formatTiyn(edge.sum_tiyn) : '—';
   const count = typeof edge.n_tx === 'number' ? formatInteger(edge.n_tx) : '—';
   return {
-    id: 'edge-' + entry.index,
-    from: edge.src,
-    to: edge.dst,
-    title: tooltip([
-      'Направление: ' + edge.src + ' → ' + edge.dst,
-      'Сумма: ' + amount,
-      'Переводов: ' + count,
-      'Глубина: ' + (edge.depth ?? '—'),
-    ]),
-    arrows: { to: { enabled: true, scaleFactor: 0.72 } },
-    color: { color: '#9aa9ad', highlight: '#287b72', hover: '#5477b5' },
-    width: edgeWidthScale(edge.sum_tiyn),
-    selectionWidth: 1.2,
-    smooth: { enabled: true, type: 'continuous', roundness: 0.12 },
+    group: 'edges',
+    data: {
+      id: 'edge-' + entry.index,
+      source: edge.src,
+      target: edge.dst,
+      width: edgeWidthScale(edge.sum_tiyn),
+      opacity: graphScope === 'full' ? 0.22 : 0.8,
+      tooltip: [
+        'Направление: ' + edge.src + ' → ' + edge.dst,
+        'Сумма: ' + amount,
+        'Переводов: ' + count,
+        'Глубина: ' + (edge.depth ?? '—'),
+      ],
+    },
   };
 }
 
-const NETWORK_OPTIONS = {
-  autoResize: true,
-  nodes: { borderWidth: 1.5, chosen: true, shadow: { enabled: false } },
-  edges: { chosen: true, shadow: { enabled: false } },
-  interaction: {
-    hover: true,
-    hoverConnectedEdges: true,
-    keyboard: { enabled: true, bindToWindow: false },
-    navigationButtons: true,
-    multiselect: false,
-    zoomView: true,
-  },
-  physics: {
-    enabled: false,
-    solver: 'barnesHut',
-    barnesHut: { gravitationalConstant: -9000, centralGravity: 0.18, springLength: 95, springConstant: 0.035, damping: 0.16, avoidOverlap: 0.28 },
-    stabilization: { enabled: true, iterations: 55, updateInterval: 20, fit: true },
-  },
-};
+const GRAPH_STYLE = [
+  { selector: 'node', style: {
+    'background-color': 'data(color)', 'border-color': 'data(border)', 'border-width': 'data(borderWidth)',
+    shape: 'data(shape)', width: 'data(size)', height: 'data(size)', label: '',
+  } },
+  { selector: 'node:selected', style: {
+    'border-color': '#173c38', 'border-width': 5, width: 36, height: 36,
+    label: 'data(id)', 'font-size': 13, 'font-weight': 700, 'text-background-color': '#ffffff',
+    'text-background-opacity': 0.9, 'text-background-padding': '3px', 'text-margin-y': -23,
+  } },
+  { selector: 'edge', style: {
+    width: 'data(width)', 'line-color': '#93a6aa', 'target-arrow-color': '#788f95',
+    'target-arrow-shape': 'triangle', 'arrow-scale': 0.9, 'curve-style': 'bezier', opacity: 'data(opacity)',
+  } },
+  { selector: 'edge:selected', style: { 'line-color': '#286f69', 'target-arrow-color': '#286f69', opacity: 1 } },
+];
 
-function syncDataSet(dataSet, records) {
-  const nextById = new Map(records.map((record) => [record.id, record]));
-  const currentIds = dataSet.getIds();
-  const obsolete = currentIds.filter((id) => !nextById.has(id));
-  if (obsolete.length) dataSet.remove(obsolete);
-  if (records.length) dataSet.update(records);
+function graphPositions(graph, graphScope) {
+  const positions = new Map();
+  if (graphScope !== 'full' && graph.selectedNode) {
+    const center = graph.selectedNode.gid;
+    positions.set(center, { x: 0, y: 0 });
+    const incoming = new Set();
+    const outgoing = new Set();
+    graph.visibleEdges.forEach(({ edge }) => {
+      if (edge.dst === center && edge.src !== center) incoming.add(edge.src);
+      if (edge.src === center && edge.dst !== center) outgoing.add(edge.dst);
+    });
+    const left = [];
+    const right = [];
+    graph.visibleNodes.filter((node) => node.gid !== center)
+      .sort((a, b) => a.gid.localeCompare(b.gid, undefined, { numeric: true }))
+      .forEach((node) => {
+        if (incoming.has(node.gid) && (!outgoing.has(node.gid) || left.length <= right.length)) left.push(node);
+        else right.push(node);
+      });
+    for (const [side, items] of [[-1, left], [1, right]]) {
+      const rows = Math.min(10, items.length);
+      items.forEach((node, index) => {
+        const row = index % rows;
+        const column = Math.floor(index / rows);
+        positions.set(node.gid, { x: side * (210 + column * 135), y: (row - (rows - 1) / 2) * 76 });
+      });
+    }
+    return positions;
+  }
+
+  // Give each cluster a compact circular footprint, then place the footprints
+  // on concentric rings. The full graph remains deterministic and needs no physics.
+  const groups = new Map();
+  graph.visibleNodes.forEach((node) => {
+    const key = String(node.cluster_id ?? 'unclustered');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(node);
+  });
+  const clusters = [...groups]
+    .map(([key, members]) => ({ key, members, radius: 28 * Math.sqrt(members.length) + 24 }))
+    .sort((a, b) => b.members.length - a.members.length || a.key.localeCompare(b.key, undefined, { numeric: true }));
+  const placeCluster = (cluster, x, y) => {
+    cluster.members.sort((a, b) => Number(b.is_seed === true) - Number(a.is_seed === true)
+      || (b.priority_score ?? 0) - (a.priority_score ?? 0)
+      || a.gid.localeCompare(b.gid, undefined, { numeric: true }));
+    cluster.members.forEach((node, index) => {
+      const angle = index * 2.399963229728653;
+      const radius = 28 * Math.sqrt(index);
+      positions.set(node.gid, { x: x + radius * Math.cos(angle), y: y + radius * Math.sin(angle) });
+    });
+  };
+  if (clusters.length === 0) return positions;
+  const center = clusters.shift();
+  placeCluster(center, 0, 0);
+  let previousRadius = 0;
+  let previousExtent = center.radius;
+  while (clusters.length) {
+    const ringRadius = previousRadius + previousExtent + clusters[0].radius + 72;
+    const ring = [];
+    let usedAngle = 0;
+    while (clusters.length) {
+      const cluster = clusters[0];
+      const angle = 2 * Math.asin(Math.min(1, (cluster.radius + 28) / ringRadius));
+      if (ring.length && usedAngle + angle > 2 * Math.PI) break;
+      ring.push({ cluster: clusters.shift(), angle });
+      usedAngle += angle;
+    }
+    const gap = (2 * Math.PI - usedAngle) / ring.length;
+    let angle = -Math.PI / 2;
+    ring.forEach(({ cluster, angle: width }) => {
+      angle += width / 2;
+      placeCluster(cluster, ringRadius * Math.cos(angle), ringRadius * Math.sin(angle));
+      angle += width / 2 + gap;
+    });
+    previousRadius = ringRadius;
+    previousExtent = Math.max(...ring.map(({ cluster }) => cluster.radius));
+  }
+  return positions;
 }
 
 function updateFilter(onFiltersChange, key, value) {
@@ -135,14 +193,12 @@ function updateFilter(onFiltersChange, key, value) {
 
 export default function GraphView({ report, selectedGid, onSelectGid, filters, onFiltersChange }) {
   const containerRef = useRef(null);
-  const networkRef = useRef(null);
-  const nodesRef = useRef(null);
-  const edgesRef = useRef(null);
+  const cyRef = useRef(null);
   const onSelectRef = useRef(onSelectGid);
   const previousSelectedRef = useRef(undefined);
-  const previousScopeSignatureRef = useRef(null);
-  const stabilizationRef = useRef({ listener: null, timer: null });
   const [edgePage, setEdgePage] = useState(0);
+  const [graphTooltip, setGraphTooltip] = useState(null);
+  const [showAllNeighbors, setShowAllNeighbors] = useState(false);
 
   onSelectRef.current = onSelectGid;
 
@@ -150,15 +206,23 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
     () => buildGraphScope(report, selectedGid, filters),
     [report, selectedGid, filters],
   );
-  const nodeRecords = useMemo(
-    () => graph.visibleNodes.map((node) => buildNodeItem(node, selectedGid, filters.colorMode)),
-    [graph.visibleNodes, selectedGid, filters.colorMode],
-  );
+  const displayGraph = useMemo(() => {
+    if (filters.graphScope === 'full' || showAllNeighbors || graph.visibleEdges.length <= NEIGHBORHOOD_EDGE_LIMIT) return graph;
+    const visibleEdges = [...graph.visibleEdges]
+      .sort((a, b) => (b.edge.sum_tiyn ?? 0) - (a.edge.sum_tiyn ?? 0) || a.index - b.index)
+      .slice(0, NEIGHBORHOOD_EDGE_LIMIT);
+    const ids = new Set([selectedGid]);
+    visibleEdges.forEach(({ edge }) => { ids.add(edge.src); ids.add(edge.dst); });
+    return {
+      ...graph,
+      visibleNodes: graph.visibleNodes.filter((node) => ids.has(node.gid)),
+      visibleEdges,
+      signature: visibleEdges.map(({ index }) => index).join(','),
+    };
+  }, [graph, filters.graphScope, selectedGid, showAllNeighbors]);
   const edgeWidthScale = useMemo(() => createEdgeWidthScale(report.edges), [report.edges]);
-  const edgeRecords = useMemo(
-    () => graph.visibleEdges.map((entry) => buildEdgeItem(entry, edgeWidthScale)),
-    [graph.visibleEdges, edgeWidthScale],
-  );
+  const graphKey = (filters.graphScope === 'full' ? 'full' : selectedGid) + '|'
+    + displayGraph.signature + '|' + filters.graphScope + '|' + filters.colorMode;
   const clusterOptions = useMemo(() => {
     const values = new Map();
     report.nodes.forEach((node) => {
@@ -185,95 +249,115 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
   }, [report.nodes]);
   const visibleClusters = useMemo(() => {
     const values = new Map();
-    graph.visibleNodes.forEach((node) => {
+    displayGraph.visibleNodes.forEach((node) => {
       const key = node.cluster_id === null || node.cluster_id === undefined ? NO_CLUSTER_FILTER : String(node.cluster_id);
       if (!values.has(key)) values.set(key, node.cluster_id);
     });
     return [...values.entries()];
-  }, [graph.visibleNodes]);
+  }, [displayGraph.visibleNodes]);
   const edgePageCount = Math.max(1, Math.ceil(graph.visibleEdges.length / PAGE_SIZE));
   const edgeRows = graph.visibleEdges.slice(edgePage * PAGE_SIZE, (edgePage + 1) * PAGE_SIZE);
 
   useEffect(() => {
     if (!containerRef.current) return undefined;
-    const nodes = new DataSet([]);
-    const edges = new DataSet([]);
-    const network = new Network(containerRef.current, { nodes, edges }, NETWORK_OPTIONS);
-    const onSelectNode = (event) => {
-      const gid = event.nodes?.[0];
-      if (typeof gid === 'string') onSelectRef.current(gid);
+    const cy = cytoscape({
+      container: containerRef.current,
+      elements: [],
+      style: GRAPH_STYLE,
+      layout: { name: 'preset', fit: false },
+      minZoom: 0.04,
+      maxZoom: 3,
+      autoungrabify: true,
+      boxSelectionEnabled: false,
+    });
+    cyRef.current = cy;
+    cy.on('tap', 'node', (event) => onSelectRef.current(event.target.id()));
+    const showTooltip = (event) => {
+      const position = event.renderedPosition || event.target.renderedPosition?.() || { x: 8, y: 8 };
+      const canvasTop = containerRef.current?.offsetTop || 0;
+      const width = containerRef.current?.clientWidth || 300;
+      const height = containerRef.current?.clientHeight || 300;
+      setGraphTooltip({
+        lines: event.target.data('tooltip'),
+        x: Math.max(8, Math.min(position.x + 12, width - 230)),
+        y: canvasTop + Math.max(8, Math.min(position.y + 12, height - 110)),
+      });
     };
-    network.on('selectNode', onSelectNode);
-    networkRef.current = network;
-    nodesRef.current = nodes;
-    edgesRef.current = edges;
+    cy.on('mouseover', 'node', showTooltip);
+    cy.on('mouseover', 'edge', showTooltip);
+    cy.on('tap', 'edge', showTooltip);
+    cy.on('mouseout', 'node', () => setGraphTooltip(null));
+    cy.on('mouseout', 'edge', () => setGraphTooltip(null));
+    cy.on('tap', (event) => { if (event.target === cy) setGraphTooltip(null); });
+    const observer = new ResizeObserver(() => {
+      cy.resize();
+    });
+    observer.observe(containerRef.current);
 
     return () => {
-      network.off('selectNode', onSelectNode);
-      if (stabilizationRef.current.listener) network.off('stabilized', stabilizationRef.current.listener);
-      if (stabilizationRef.current.timer) window.clearTimeout(stabilizationRef.current.timer);
-      network.destroy();
-      networkRef.current = null;
-      nodesRef.current = null;
-      edgesRef.current = null;
+      observer.disconnect();
+      cy.destroy();
+      cyRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    const network = networkRef.current;
-    const nodes = nodesRef.current;
-    const edges = edgesRef.current;
-    if (!network || !nodes || !edges) return;
-
-    syncDataSet(nodes, nodeRecords);
-    syncDataSet(edges, edgeRecords);
-
-    if (previousScopeSignatureRef.current !== graph.signature) {
-      const pending = stabilizationRef.current;
-      if (pending.listener) network.off('stabilized', pending.listener);
-      if (pending.timer) window.clearTimeout(pending.timer);
-      previousScopeSignatureRef.current = graph.signature;
-
-      if (graph.visibleNodes.length === 0) {
-        network.setOptions({ physics: { enabled: false } });
-      } else {
-        const iterations = graph.visibleNodes.length > 500 ? 48 : graph.visibleNodes.length > 100 ? 72 : 55;
-        let finished = false;
-        const finishLayout = () => {
-          if (finished) return;
-          finished = true;
-          network.off('stabilized', finishLayout);
-          if (stabilizationRef.current.timer) window.clearTimeout(stabilizationRef.current.timer);
-          stabilizationRef.current = { listener: null, timer: null };
-          network.setOptions({ physics: { enabled: false } });
-        };
-        network.on('stabilized', finishLayout);
-        stabilizationRef.current.listener = finishLayout;
-        network.setOptions({
-          physics: {
-            enabled: true,
-            solver: 'barnesHut',
-            barnesHut: { gravitationalConstant: -9000, centralGravity: 0.18, springLength: 95, springConstant: 0.035, damping: 0.16, avoidOverlap: 0.28 },
-            stabilization: { enabled: true, iterations, updateInterval: 20, fit: true },
-          },
-        });
-        network.stabilize(iterations);
-        stabilizationRef.current.timer = window.setTimeout(finishLayout, graph.visibleNodes.length > 500 ? 3200 : 1800);
+    const cy = cyRef.current;
+    if (!cy) return;
+    const positions = graphPositions(displayGraph, filters.graphScope);
+    const nodes = displayGraph.visibleNodes.map((node) => buildNodeItem(node, filters.colorMode, positions.get(node.gid)));
+    const edges = displayGraph.visibleEdges.map((entry) => buildEdgeItem(entry, edgeWidthScale, filters.graphScope));
+    cy.batch(() => {
+      cy.elements().remove();
+      cy.add([...nodes, ...edges]);
+    });
+    const frame = window.requestAnimationFrame(() => {
+      cy.resize();
+      if (cy.elements().length) {
+        cy.fit(cy.elements(), 28);
       }
-    }
+    });
+    setGraphTooltip(null);
+    return () => window.cancelAnimationFrame(frame);
+  }, [graphKey, edgeWidthScale]);
 
-    if (typeof selectedGid === 'string' && nodes.get(selectedGid)) {
-      network.selectNodes([selectedGid], true);
-      if (previousSelectedRef.current !== selectedGid) {
-        network.focus(selectedGid, { scale: 1.05, animation: { duration: 220, easingFunction: 'easeInOutQuad' } });
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.nodes().unselect();
+    if (typeof selectedGid === 'string') {
+      const selected = cy.getElementById(selectedGid);
+      if (selected.length) {
+        selected.select();
+        if (filters.graphScope === 'full' && previousSelectedRef.current !== undefined
+          && previousSelectedRef.current !== selectedGid) {
+          cy.center(selected);
+          cy.zoom(Math.max(cy.zoom(), 0.65));
+        } else if (filters.graphScope !== 'full' && cy.zoom() < 0.55) {
+          cy.center(selected);
+          cy.zoom(0.55);
+        }
       }
-    } else {
-      network.unselectAll();
     }
     previousSelectedRef.current = selectedGid;
-  }, [nodeRecords, edgeRecords, selectedGid]);
+  }, [selectedGid, graphKey]);
+
+  function zoomGraph(factor) {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.zoom({
+      level: Math.max(cy.minZoom(), Math.min(cy.maxZoom(), cy.zoom() * factor)),
+      renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 },
+    });
+  }
+
+  function fitGraph() {
+    const cy = cyRef.current;
+    if (cy?.elements().length) cy.fit(cy.elements(), 28);
+  }
 
   useEffect(() => setEdgePage(0), [graph.signature]);
+  useEffect(() => setShowAllNeighbors(false), [selectedGid]);
 
   function resetFilters() {
     onFiltersChange({ role: 'all', roleMode: 'primary', cluster: 'all', seedMode: 'all', graphScope: 'neighborhood', colorMode: 'role' });
@@ -291,8 +375,8 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
       <div className="panel-head graph-heading">
         <div><p className="eyebrow">2 · Проверьте связи</p><h2 id="graph-title">Направленный граф</h2></div>
         <div className="graph-counters" aria-live="polite">
-          <span><strong>{formatInteger(graph.visibleNodes.length)}</strong> узлов</span>
-          <span><strong>{formatInteger(graph.visibleEdges.length)}</strong> направленных связей</span>
+          <span><strong>{formatInteger(displayGraph.visibleNodes.length)}</strong> узлов</span>
+          <span><strong>{formatInteger(displayGraph.visibleEdges.length)}</strong> направленных связей</span>
           <span><strong>{formatInteger(filteredNodeCount)}</strong> подходят фильтрам</span>
         </div>
       </div>
@@ -301,6 +385,7 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
         <div className="graph-quick-actions" role="group" aria-label="Область графа">
           <button className="button button-quiet" type="button" aria-pressed={filters.graphScope === 'neighborhood'} onClick={() => updateFilter(onFiltersChange, 'graphScope', 'neighborhood')}>Связи клиента</button>
           <button className="button button-quiet" type="button" aria-pressed={filters.graphScope === 'full'} onClick={() => updateFilter(onFiltersChange, 'graphScope', 'full')}>Весь граф</button>
+          {filters.graphScope === 'neighborhood' && graph.visibleEdges.length > NEIGHBORHOOD_EDGE_LIMIT && <button className="graph-show-all" type="button" onClick={() => setShowAllNeighbors((value) => !value)}>{showAllNeighbors ? `Вернуть крупные ${NEIGHBORHOOD_EDGE_LIMIT}` : `Показать все ${formatInteger(graph.visibleEdges.length)} связей`}</button>}
         </div>
         <details className="graph-advanced">
           <summary>Фильтры и вид{activeFilterCount > 0 ? ` · ${activeFilterCount} выбрано` : ''}</summary>
@@ -353,9 +438,18 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
 
       <div className="graph-layout">
         <div className="graph-canvas-wrap">
-          <div ref={containerRef} className="graph-canvas" role="region" aria-label="Интерактивный направленный граф клиентов" />
-          <div className="graph-legend" aria-label="Легенда графа">
-            <strong>Легенда</strong>
+          <div className="graph-toolbar" role="group" aria-label="Управление масштабом графа">
+            <button className="graph-zoom-button" type="button" onClick={() => zoomGraph(1.35)} aria-label="Увеличить граф">+</button>
+            <button className="graph-zoom-button" type="button" onClick={() => zoomGraph(1 / 1.35)} aria-label="Уменьшить граф">−</button>
+            <button className="graph-zoom-button" type="button" onClick={fitGraph}>Вписать</button>
+          </div>
+          <p className="graph-help">{filters.graphScope === 'neighborhood'
+            ? (graph.visibleEdges.length > NEIGHBORHOOD_EDGE_LIMIT && !showAllNeighbors ? 'Крупнейшие связи по сумме · входящие слева, исходящие справа' : 'Входящие слева · исходящие справа')
+            : 'Все кластеры по кругу · выберите узел для подробностей, «Вписать» вернёт обзор'}</p>
+          <div ref={containerRef} className="graph-canvas" role="region" aria-label="Интерактивный направленный граф клиентов. Перетаскивайте поле и меняйте масштаб колесом или двумя пальцами." />
+          {graphTooltip && <div className="graph-tooltip-overlay" style={{ left: graphTooltip.x, top: graphTooltip.y }} role="status">{graphTooltip.lines.map((line) => <span key={line}>{line}</span>)}</div>}
+          <details className="graph-legend" aria-label="Легенда графа">
+            <summary>Обозначения</summary>
             <div className="legend-row">
               {filters.colorMode === 'role'
                 ? roles.map((role) => <span className="legend-key" key={role}><i style={{ backgroundColor: ROLE_COLORS[role] || '#687983' }} />{ROLE_LABELS[role] || role}</span>)
@@ -369,22 +463,8 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
               {visibleClusters.map(([key, value]) => <span className="legend-key" key={key}><i style={{ backgroundColor: clusterColor(value) }} />{key === NO_CLUSTER_FILTER ? 'Кластер не указан' : 'Кластер ' + value}</span>)}
             </div></details>}
             <span className="legend-scale">Толщина ребра — логарифмическая шкала по всему выпуску; точная сумма указана в подсказке и таблице.</span>
-          </div>
+          </details>
         </div>
-        <aside className="graph-selection" aria-label="Выбранный узел">
-          <p className="eyebrow">Текущий выбор</p>
-          {graph.selectedNode ? (
-            <>
-              <strong className="graph-selected-gid">{graph.selectedNode.gid}</strong>
-              <span>{ROLE_LABELS[graph.selectedNode.role] || graph.selectedNode.role || 'Роль не указана'}</span>
-              <span>Кластер: {graph.selectedNode.cluster_id ?? '—'}</span>
-              <span>Входящие / исходящие связи: {formatInteger(graph.selectedNode.in_deg)} / {formatInteger(graph.selectedNode.out_deg)}</span>
-              <span>Приоритет: {typeof graph.selectedNode.priority_score === 'number' ? graph.selectedNode.priority_score.toFixed(3) : '—'}</span>
-              <p className="graph-selection-reason">{graph.selectedNode.why || graph.selectedNode.evidence || 'Основание не приложено к этому выпуску.'}</p>
-              <a href="#detail-title">Открыть полную карточку ↑</a>
-            </>
-          ) : <p className="muted">Выберите клиента в списке выше или на графе.</p>}
-        </aside>
       </div>
 
       <details className="edge-table-section">

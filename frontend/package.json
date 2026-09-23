@@ -12,9 +12,9 @@
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
+    "cytoscape": "3.34.3",
     "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "vis-network": "10.1.2"
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "vite": "8.3.0"

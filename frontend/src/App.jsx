@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import GraphView from './components/GraphView.jsx';
-import { formatInteger, formatPeriod, formatScore, formatTiyn, loadReport, warningText } from './report.js';
+import { formatInteger, formatPeriod, formatScore, formatTiyn, loadReport, ruleFacts, warningText } from './report.js';
 import { filterTopNodes, matchesGraphFilters, nodesWithExactPriority } from './graphModel.js';
 
 const CLIENTS_PAGE_SIZE = 50;
@@ -9,8 +9,7 @@ function LoadingView() {
   return (
     <main className="page" aria-busy="true" aria-live="polite">
       <header className="masthead">
-        <div className="brand"><span className="brand-mark">JG</span><div><p className="brand-name">Jigas · Граф денег</p><p className="brand-subtitle">Локальный аналитический отчёт</p></div></div>
-        <span className="local-state">Чтение локального отчёта</span>
+        <div className="brand"><div><p className="brand-name">Jigas · Граф денег</p><p className="brand-subtitle">Локальный аналитический отчёт</p></div></div>
       </header>
       <div className="loading-block" aria-label="Загрузка отчёта">
         <span className="skeleton skeleton-title" /><span className="skeleton skeleton-line" />
@@ -25,8 +24,7 @@ function ErrorView({ message, onRetry }) {
   return (
     <main className="page">
       <header className="masthead">
-        <div className="brand"><span className="brand-mark">JG</span><div><p className="brand-name">Jigas · Граф денег</p><p className="brand-subtitle">Локальный аналитический отчёт</p></div></div>
-        <span className="local-state">Только локальные данные</span>
+        <div className="brand"><div><p className="brand-name">Jigas · Граф денег</p><p className="brand-subtitle">Локальный аналитический отчёт</p></div></div>
       </header>
       <section className="state-panel state-error" role="alert">
         <p className="eyebrow">Не удалось открыть выпуск</p>
@@ -49,6 +47,43 @@ function Metric({ label, value, detail, className = '' }) {
   );
 }
 
+function clientFacts(node) {
+  if (!node) return ['Подробные данные по этому клиенту не приложены к отчёту.'];
+  const facts = [];
+  const roles = Array.isArray(node.matched_roles) ? node.matched_roles : [];
+  if (roles.length > 1) facts.push(`Совпали ${formatInteger(roles.length)} структурные роли; основная — ${roleLabel(node.role).toLowerCase()}.`);
+  else if (node.role) facts.push(`Основная структурная роль — ${roleLabel(node.role).toLowerCase()}.`);
+  if (Number.isSafeInteger(node.in_tiyn) && Number.isSafeInteger(node.out_tiyn)
+    && Number.isSafeInteger(node.in_tiyn + node.out_tiyn)) {
+    facts.push(`Наблюдаемый оборот: ${formatTiyn(node.in_tiyn + node.out_tiyn)}.`);
+  }
+  if (Number.isFinite(node.seed_reach_count) && node.seed_reach_count > 0) {
+    facts.push(`Связан с ${formatInteger(node.seed_reach_count)} seed-клиентами в наблюдаемом графе.`);
+  }
+  if (Number.isFinite(node.in_deg) && Number.isFinite(node.out_deg)) {
+    facts.push(`Связи в выгрузке: ${formatInteger(node.in_deg)} входящих и ${formatInteger(node.out_deg)} исходящих.`);
+  }
+  return facts.length ? facts : ['Для этого клиента есть только исходное объяснение расчёта.'];
+}
+
+function priorityFactors(node, parameters) {
+  const weights = parameters?.priority_parameters?.weights || parameters?.weights;
+  const components = node?.score_components;
+  if (!weights || !components) return [];
+  const names = { M: 'Роли', A: 'Оборот переводов', C: 'Охват seed-клиентов', H: 'Положение на путях графа' };
+  const details = {
+    M: Array.isArray(node.matched_roles) ? `совпало правил: ${formatInteger(node.matched_roles.length)}` : '',
+    A: Number.isSafeInteger(node.in_tiyn + node.out_tiyn) ? formatTiyn(node.in_tiyn + node.out_tiyn) : '',
+    C: Number.isFinite(node.seed_reach_count) ? `достижимы seed-клиенты: ${formatInteger(node.seed_reach_count)}` : '',
+    H: 'связующее положение в сети',
+  };
+  return Object.keys(names).filter((key) => Number.isFinite(weights[key]) && Number.isFinite(components[key]))
+    .map((key) => ({ key, label: names[key], detail: details[key], contribution: weights[key] * components[key] }))
+    .filter((factor) => factor.contribution > 0)
+    .sort((a, b) => b.contribution - a.contribution)
+    .slice(0, 2);
+}
+
 function ReportOverview({ report }) {
   const dataset = report.dataset;
   const nodeCount = typeof dataset.node_count === 'number' ? dataset.node_count : report.nodes.length;
@@ -56,6 +91,12 @@ function ReportOverview({ report }) {
   const transactionCount = typeof dataset.transaction_count === 'number' ? dataset.transaction_count : null;
   const demo = report.demo === true;
 
+  const metricItems = [
+    ['Клиенты в графе', formatInteger(nodeCount)],
+    ['Направленные связи', formatInteger(edgeCount)],
+    ['Операции', formatInteger(transactionCount)],
+    ['Наблюдаемый оборот', formatTiyn(dataset.sum_tiyn)],
+  ];
   return (
     <>
       <section className="hero">
@@ -70,32 +111,26 @@ function ReportOverview({ report }) {
         </div>
       </section>
 
-      <section className="metrics" aria-label="Сводка отчёта">
-        <Metric label="Клиенты в графе" value={formatInteger(nodeCount)} />
-        <Metric label="Направленные связи" value={formatInteger(edgeCount)} />
-        <Metric label="Операции" value={formatInteger(transactionCount)} />
-        <Metric label="Наблюдаемый оборот" value={formatTiyn(dataset.sum_tiyn)} className="metric-money" />
-      </section>
+      <section className="metrics desktop-overview" aria-label="Сводка отчёта">{metricItems.map(([label, value], index) => <Metric key={label} label={label} value={value} className={index === 3 ? 'metric-money' : ''} />)}</section>
+      <details className="mobile-overview"><summary>Охват: {formatInteger(nodeCount)} клиентов · {formatInteger(edgeCount)} связей</summary><section className="metrics" aria-label="Сводка отчёта">{metricItems.map(([label, value], index) => <Metric key={label} label={label} value={value} className={index === 3 ? 'metric-money' : ''} />)}</section></details>
 
-      <aside className="scope-note">
-        <span className="scope-mark" aria-hidden="true">i</span>
-        <div>
-          <strong>Результат показывает структуру выгрузки, а не подтверждённое нарушение.</strong>
-          <p>{typeof dataset.limitations === 'string' && dataset.limitations.trim()
-            ? dataset.limitations
-            : 'Входящие и исходящие операции ограничены условиями выборки. Проверяйте выводы по полным данным банка.'}</p>
-        </div>
-      </aside>
+      <details className="scope-note">
+        <summary>Структурные гипотезы, не доказательство нарушения. <span>Ограничения</span></summary>
+        <p>{typeof dataset.limitations === 'string' && dataset.limitations.trim()
+          ? dataset.limitations
+          : 'Входящие и исходящие операции ограничены условиями выборки. Проверяйте выводы по полным данным банка.'}</p>
+      </details>
     </>
   );
 }
 
-function TopNodes({ topNodes, allNodes, nodeIndex, topRankByGid, filters, selectedGid, onSelect }) {
+function TopNodes({ topNodes, allNodes, nodeIndex, topRankByGid, parameters, filters, selectedGid, onSelect }) {
   const [mode, setMode] = useState('top');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
   const allMatches = useMemo(() => allNodes.filter((node) => matchesGraphFilters(node, filters)
-    && node.gid.includes(query.trim())), [allNodes, filters, query]);
+    && node.gid.includes(query.trim())).sort((a, b) => (b.priority_score ?? -1) - (a.priority_score ?? -1)
+      || a.gid.localeCompare(b.gid, undefined, { numeric: true })), [allNodes, filters, query]);
   useEffect(() => setPage(0), [mode, query, filters]);
   const rows = mode === 'top'
     ? topNodes
@@ -130,7 +165,9 @@ function TopNodes({ topNodes, allNodes, nodeIndex, topRankByGid, filters, select
                   <td className="rank-cell">{item.rank == null ? '—' : formatInteger(item.rank)}</td>
                   <td>
                     <button className="gid-action" type="button" aria-pressed={selectedGid === item.gid} onClick={() => onSelect(item.gid)}>{item.gid}</button>
-                    <details className="mobile-reason"><summary>Основание</summary><p>{item.why || item.evidence || nodeIndex.get(item.gid)?.evidence || 'Подробная причина не приложена.'}</p></details>
+                    <details className="row-reason"><summary>Почему в списке</summary><ul>{(priorityFactors(nodeIndex.get(item.gid), parameters).length
+                      ? priorityFactors(nodeIndex.get(item.gid), parameters).map((factor) => `${factor.label} — ${factor.detail}; вклад ${formatScore(factor.contribution)}.`)
+                      : clientFacts(nodeIndex.get(item.gid)).slice(0, 2)).map((fact) => <li key={fact}>{fact}</li>)}</ul></details>
                   </td>
                   <td><RoleTag role={item.role} /></td>
                   <td className="numeric-cell">{formatScore(item.priority_score)}</td>
@@ -145,12 +182,12 @@ function TopNodes({ topNodes, allNodes, nodeIndex, topRankByGid, filters, select
         <button className="button button-quiet" type="button" disabled={page === 0} onClick={() => setPage(page - 1)}>Назад</button>
         <button className="button button-quiet" type="button" disabled={(page + 1) * CLIENTS_PAGE_SIZE >= total} onClick={() => setPage(page + 1)}>Далее</button>
       </div>}
-      <p className="panel-footnote">Оценки рассчитаны Python. Ранг указан только для топ-20; полный список идёт по ID.</p>
+      <p className="panel-footnote">Оценки рассчитаны Python. Ранг указан только для топ-20; полный список отсортирован по приоритету.</p>
     </section>
   );
 }
 
-function RoleTag({ role }) {
+function roleLabel(role) {
   const labels = {
     seed: 'Seed',
     coordinator: 'Координатор',
@@ -162,7 +199,11 @@ function RoleTag({ role }) {
     isolated: 'Изолят',
   };
   const value = typeof role === 'string' && role ? role : 'Не указана';
-  return <span className="role-tag">{labels[value] || value}</span>;
+  return labels[value] || value;
+}
+
+function RoleTag({ role }) {
+  return <span className="role-tag">{roleLabel(role)}</span>;
 }
 
 function CopyGidButton({ gid }) {
@@ -180,7 +221,7 @@ function CopyGidButton({ gid }) {
   return <button className="copy-button" type="button" onClick={copyGid} aria-label={`Скопировать полный ID ${gid}`}>{label}</button>;
 }
 
-function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, selectedGid, onSelect }) {
+function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, parameters, selectedGid, onSelect }) {
   if (!node) {
     return <section className="panel detail-panel" aria-labelledby="detail-title"><div className="empty-state"><strong id="detail-title">Выберите клиента</strong><span>Найдите точный ID или выберите клиента на графе, в топе или в кластере.</span></div></section>;
   }
@@ -197,6 +238,7 @@ function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, selecte
   if (node.boundary === true && !warnings.some((item) => item === 'boundary' || item?.code === 'boundary')) warnings.push('boundary');
   if (node.isolated === true && !warnings.some((item) => item === 'isolated' || item?.code === 'isolated')) warnings.push('isolated');
   const matchedRoles = Array.isArray(node.matched_roles) ? node.matched_roles : [];
+  const factors = priorityFactors(node, parameters);
 
   return (
     <section className="panel detail-panel" aria-labelledby="detail-title">
@@ -204,18 +246,37 @@ function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, selecte
         <div><p className="eyebrow">Карточка клиента{topIndex ? ` · ранг ${formatInteger(topIndex)}` : ''}</p><h2 id="detail-title" className="detail-gid" tabIndex="-1">{node.gid}</h2><CopyGidButton gid={node.gid} /></div>
         <RoleTag role={node.role} />
       </div>
+      <div className="node-flags">{node.is_seed === true && <span>Seed-клиент</span>}{Number.isInteger(node.depth) && <span>Глубина {formatInteger(node.depth)}</span>}{node.boundary === true && <span>Граница выгрузки</span>}</div>
       <div className="score-row">
         <div><span>Приоритет</span><strong>{formatScore(node.priority_score)}</strong></div>
-        <div><span>Оценка роли</span><strong>{formatScore(node.role_score)}</strong></div>
+        <div><span>Поддержка роли</span><strong>{formatScore(node.role_score)}</strong></div>
         <div><span>Кластер</span><strong>{node.cluster_id ?? '—'}</strong></div>
       </div>
-      <div className="priority-reason"><strong>Ведущие основания приоритета</strong><p>{topItem?.why || node.why || node.evidence || 'Подробная причина не приложена к этому отчёту.'}</p></div>
-      {node.evidence && node.evidence !== (topItem?.why || node.why) && <details className="evidence-details"><summary>Дополнительные данные расчёта</summary><p>{node.evidence}</p></details>}
+      <div className="priority-reason"><strong>Главные факторы приоритета</strong>{factors.length > 0
+        ? <ul>{factors.map((factor) => <li key={factor.key}><b>{factor.label}</b> — {factor.detail}; вклад {formatScore(factor.contribution)}.</li>)}</ul>
+        : <p>{node.priority_score === 0 && node.score_components
+          ? 'Положительных вкладов в оценку нет в этой выгрузке.'
+          : 'Состав факторов не приложен к этому отчёту. Доступные исходные данные — ниже.'}</p>}
+      </div>
+      <div className="observed-facts"><strong>Что видно в выборке</strong><ul>{clientFacts(node).map((fact) => <li key={fact}>{fact}</li>)}</ul></div>
+      {warnings.length > 0 ? (
+        <div className="warning-block"><strong>Ограничения для этого клиента</strong><ul>{warnings.map((warning, index) => <li key={`${warning?.code || warning}-${index}`}>{warningText(warning)}</li>)}</ul></div>
+      ) : <p className="no-warning">Для клиента нет отдельных предупреждений. Общие ограничения отчёта остаются в силе.</p>}
+      {(topItem?.why || node.why || node.evidence) && <details className="evidence-details"><summary>Показать исходный расчёт</summary>
+        {(topItem?.why || node.why) && <p><strong>Приоритет:</strong> {topItem?.why || node.why}</p>}
+        {node.evidence && <p><strong>Роль:</strong> {node.evidence}</p>}
+      </details>}
       {matchedRoles.length > 0 && (
         <details className="matched-roles"><summary>Совпавшие правила · {formatInteger(matchedRoles.length)}</summary><ul>
-          {matchedRoles.map((match, index) => (
-            <li key={`${match?.role || 'role'}-${index}`}><span className="match-copy"><RoleTag role={match?.role} />{match?.reason && <small>{match.reason}</small>}</span><span>Поддержка: {formatScore(match?.support)}</span></li>
-          ))}
+          {matchedRoles.map((match, index) => {
+            const facts = ruleFacts(node, match, parameters);
+            return <li key={`${match?.role || 'role'}-${index}`}>
+              <div className="match-heading"><RoleTag role={match?.role} /><span>Поддержка правила: {formatScore(match?.support)}</span></div>
+              {facts.length > 0 ? <ul className="rule-facts">{facts.map((fact) => <li key={fact}>{fact}</li>)}</ul>
+                : <p className="rule-fallback">{match?.reason ? 'Для этой версии отчёта доступна только техническая запись.' : 'Подробные условия не приложены к этому отчёту.'}</p>}
+              {match?.reason && <details className="rule-source"><summary>Техническая запись</summary><code>{match.reason}</code></details>}
+            </li>;
+          })}
         </ul></details>
       )}
       {matchedRoles.length > 0 && matchedRoles.every((match) => !match?.reason) && <p className="reason-fallback">Для отдельных совпавших правил нет объяснений в этом отчёте. Роль не пересчитывается.</p>}
@@ -235,9 +296,6 @@ function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, selecte
           ))}
         </ul>
       </details>}
-      {warnings.length > 0 ? (
-        <div className="warning-block"><strong>Ограничения и предупреждения</strong><ul>{warnings.map((warning, index) => <li key={`${warning?.code || warning}-${index}`}>{warningText(warning)}</li>)}</ul></div>
-      ) : <p className="no-warning">Для клиента нет отдельных предупреждений. Общие ограничения отчёта остаются в силе.</p>}
     </section>
   );
 }
@@ -255,18 +313,30 @@ function ClusterList({ clusters, nodes, onSelect }) {
           const key = String(cluster.cluster_id ?? `unknown-${index}`);
           const members = nodes.filter((node) => String(node.cluster_id) === String(cluster.cluster_id));
           const ordered = [...members].sort((a, b) => (b.priority_score ?? -1) - (a.priority_score ?? -1));
+          const leader = members.find((node) => node.gid === cluster.top_gids?.[0]) || ordered[0];
+          const roleCounts = [...members.reduce((counts, node) => counts.set(node.role, (counts.get(node.role) || 0) + 1), new Map())]
+            .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+            .slice(0, 2);
           return (
             <details className="cluster-item" key={`${key}-${index}`}>
               <summary>
                 <span className="cluster-title">Кластер {cluster.cluster_id ?? '—'}</span>
-                <span className="cluster-meta">{formatInteger(cluster.n_nodes ?? members.length)} клиентов · {formatInteger(cluster.n_seed)} seed</span>
+                <span className="cluster-meta">{formatInteger(cluster.n_nodes ?? members.length)} клиентов · {formatInteger(cluster.n_seed)} seed-клиентов</span>
                 <span className="cluster-volume">{formatTiyn(cluster.sum_tiyn_internal)}</span>
               </summary>
               <div className="cluster-content">
-                {cluster.hypothesis && <p>{cluster.hypothesis}</p>}
-                {ordered.length > 0 ? <ul className="cluster-members">{ordered.map((node) => (
+                <div className="cluster-facts">
+                  {Number.isFinite(cluster.n_edges_internal) && <p><strong>{formatInteger(cluster.n_edges_internal)}</strong> направленных связей внутри группы.</p>}
+                  {roleCounts.length > 0 && <p>Чаще встречаются роли: {roleCounts.map(([role, count]) => `${roleLabel(role)} — ${formatInteger(count)}`).join('; ')}.</p>}
+                  <p>{cluster.n_seed === 0 ? 'В группе нет seed-клиентов. Это не означает, что группа безопасна.' : 'Описаны только переводы, попавшие в выборку.'}</p>
+                </div>
+                {leader && <div className="cluster-leader"><strong>Первый клиент для проверки по приоритету</strong><div><button className="gid-action" type="button" onClick={() => onSelect(leader.gid)}>{leader.gid}</button><RoleTag role={leader.role} /></div>
+                  {Number.isFinite(leader.in_deg) && Number.isFinite(leader.out_deg) && <p>Входящих связей: {formatInteger(leader.in_deg)}; исходящих: {formatInteger(leader.out_deg)}. Вход {formatTiyn(leader.in_tiyn)}, выход {formatTiyn(leader.out_tiyn)} во всей наблюдаемой выборке.</p>}
+                </div>}
+                {cluster.hypothesis && <details className="cluster-source"><summary>Исходная формулировка отчёта</summary><p>{cluster.hypothesis}</p></details>}
+                {ordered.length > 0 ? <details className="cluster-members-details"><summary>Все клиенты группы · {formatInteger(ordered.length)}</summary><ul className="cluster-members">{ordered.map((node) => (
                   <li key={node.gid}><button className="gid-action" type="button" onClick={() => onSelect(node.gid)}>{node.gid}</button><RoleTag role={node.role} /><span>{formatScore(node.priority_score)}</span></li>
-                ))}</ul> : <p className="muted">Узлы этого кластера не найдены в массиве nodes.</p>}
+                ))}</ul></details> : <p className="muted">Узлы этого кластера не найдены в массиве nodes.</p>}
               </div>
             </details>
           );
@@ -328,6 +398,11 @@ export default function App() {
     });
   }
 
+  function selectFromGraph(gid) {
+    if (window.matchMedia('(max-width: 900px)').matches) selectAndReveal(gid);
+    else selectGid(gid);
+  }
+
   function searchExact(event) {
     event.preventDefault();
     const gid = searchDraft.trim();
@@ -336,7 +411,7 @@ export default function App() {
       setSearchMessage(gid ? 'Клиент с таким ID не найден. Выбор очищен.' : 'Введите полный ID клиента.');
       return;
     }
-    setSelectedGid(gid);
+    selectAndReveal(gid);
     setSearchMessage('Клиент найден. Его карточка и связи обновлены.');
   }
 
@@ -364,8 +439,7 @@ export default function App() {
   return (
     <main className="page">
       <header className="masthead">
-        <div className="brand"><span className="brand-mark">JG</span><div><p className="brand-name">Jigas · Граф денег</p><p className="brand-subtitle">Структура переводов для проверки</p></div></div>
-        <span className="local-state">Работает из локального выпуска</span>
+        <div className="brand"><div><p className="brand-name">Jigas · Граф денег</p><p className="brand-subtitle">Структура переводов для проверки</p></div></div>
       </header>
       <ReportOverview report={report} />
 
@@ -381,11 +455,12 @@ export default function App() {
               <span className={searchMessage.includes('не найден') || searchMessage.includes('Введите') ? 'search-error' : 'search-success'} role={searchMessage.includes('не найден') || searchMessage.includes('Введите') ? 'alert' : 'status'}>{searchMessage || 'ID сравнивается как строка без округления.'}</span>
             </form>
           </section>
-          <section className="content-grid">
-            <TopNodes topNodes={filteredTopNodes} allNodes={report.nodes} nodeIndex={nodeIndex} topRankByGid={topRankByGid} filters={filters} selectedGid={selectedGid} onSelect={selectAndReveal} />
-            <NodeDetails node={selectedNode} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} tiedNodes={tiedNodes} topRankByGid={topRankByGid} selectedGid={selectedGid} onSelect={selectAndReveal} />
+          <nav className="workspace-nav" aria-label="Разделы анализа"><a href="#detail-title">Карточка</a><a href="#graph-title">Связи</a><a href="#top-title">Клиенты</a></nav>
+          <section className="analysis-workspace" aria-label="Рабочая область анализа">
+            <TopNodes topNodes={filteredTopNodes} allNodes={report.nodes} nodeIndex={nodeIndex} topRankByGid={topRankByGid} parameters={report.parameters} filters={filters} selectedGid={selectedGid} onSelect={selectAndReveal} />
+            <GraphView report={report} selectedGid={selectedGid} onSelectGid={selectFromGraph} filters={filters} onFiltersChange={setFilters} />
+            <NodeDetails node={selectedNode} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} tiedNodes={tiedNodes} topRankByGid={topRankByGid} parameters={report.parameters} selectedGid={selectedGid} onSelect={selectAndReveal} />
           </section>
-          <GraphView report={report} selectedGid={selectedGid} onSelectGid={selectGid} filters={filters} onFiltersChange={setFilters} />
         </>
       )}
 
