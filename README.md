@@ -46,7 +46,7 @@ docker compose run --rm --entrypoint python pipeline test_contract.py --data /ap
 ./deploy.sh
 ```
 
-Скрипт собирает и проверяет отчёт, затем отправляет его на VM. Веб-отчёт доступен по адресу https://8080-sffvn5xhk.gobrev.dev/report.html.
+Скрипт собирает и проверяет отчёт, затем отправляет его на VM. Веб-отчёт доступен по адресу https://8080-sffvn5xhk.gobrev.dev/.
 
 ### Linux: bind-mounted каталоги
 

@@ -25,6 +25,7 @@ mkdir -p data out
 docker compose run --rm --user "$uid:$gid" prepare
 docker compose run --rm --user "$uid:$gid" pipeline --data /app/data --out /app/out
 docker compose run --rm --user "$uid:$gid" --entrypoint python pipeline test_contract.py --data /app/data --out /app/out
+cp out/report.html out/index.html
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -49,4 +50,4 @@ tar -czf - -C out . | ssh \
   ubuntu@global.prd.ga.run.brev.nvidia.com \
   'sudo mkdir -p /home/ubuntu/jigas-demo/out && sudo tar -xzf - -C /home/ubuntu/jigas-demo/out --no-same-owner && sudo chown -R ubuntu:ubuntu /home/ubuntu/jigas-demo/out'
 
-echo "Deployed report: https://8080-sffvn5xhk.gobrev.dev/report.html"
+echo "Deployed report: https://8080-sffvn5xhk.gobrev.dev/"
