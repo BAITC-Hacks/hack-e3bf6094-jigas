@@ -16,7 +16,7 @@
 |---|---|---|
 | `frontend/` и React HA-15.1/15.2 ([экран](https://trello.com/c/Rnk792mE), [граф](https://trello.com/c/kpeqbuVO)) | UI-агент этого потока | Не править до handoff |
 | `hackalem/pipeline.py`, `hackalem/html.py`, `Dockerfile`, `compose.yaml` и [React выпуск](https://trello.com/c/TOLPtvoW) | Интегратор этого потока | Не править до handoff |
-| `hackalem/scoring.py`, `hackalem/report.py` и [объяснения ролей](https://trello.com/c/tIzQHdJ0) | Analytics-агент этого потока | Не править до handoff |
+| `hackalem/scoring.py`, `hackalem/report.py` и [HA-17.1: объяснения ролей](https://trello.com/c/tIzQHdJ0) | Analytics-агент этого потока | Не править до handoff |
 | `test_contract.py`, `README.md`, `docs/validation.md` | Verification-агент этого потока | Не править до handoff |
 | `docs/SECOND_WAVE_RESEARCH.md`, `research/second_wave*`, обновляемые SPEC/PLAN | Параллельный исследовательский поток | Не править до handoff |
 
