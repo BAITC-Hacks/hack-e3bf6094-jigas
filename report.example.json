@@ -1,0 +1,151 @@
+{
+  "schema_version": "1.0",
+  "demo": true,
+  "dataset": {
+    "period_start": "2026-07-01",
+    "period_end": "2026-07-31",
+    "node_count": 8,
+    "edge_count": 8,
+    "transaction_count": 12,
+    "n_seed": 2,
+    "sum_tiyn": 153000000,
+    "sha256_files": {},
+    "limitations": "Учебная схема: искусственные клиенты и суммы. Граф ограничен четырьмя направленными шагами от seed; рёбра ниже 5 000 KZT не включены."
+  },
+  "parameters": {
+    "rules_version": "baseline-1.0",
+    "priority_weights": { "M": 0.35, "A": 0.3, "C": 0.2, "H": 0.15 },
+    "louvain": { "resolution": 1, "seed": 42 }
+  },
+  "nodes": [
+    {
+      "gid": "5010000001", "role": "peripheral", "role_score": 0,
+      "cluster_id": 0, "priority_score": 0.132,
+      "evidence": "Seed с тремя исходящими рёбрами; входящий поток может быть неполным в доступном фрагменте.",
+      "matched_roles": [], "score_components": { "M": 0, "A": 0.4, "C": 0, "H": 0.08 },
+      "warnings": ["seed_incomplete_in"], "depth": 0, "is_seed": true,
+      "in_deg": 0, "out_deg": 3, "in_tiyn": 0, "out_tiyn": 51000000,
+      "in_tx": 0, "out_tx": 5, "pass_through": null,
+      "seed_reach_count": 0, "betweenness": 0.08, "last_in": null,
+      "days_after_last_in": null, "boundary": false, "isolated": false
+    },
+    {
+      "gid": "9007199254740993", "role": "transit", "role_score": 0.585,
+      "cluster_id": 0, "priority_score": 0.58825,
+      "evidence": "Почти равные наблюдаемые вход и выход; один seed достигает узла. Это структурная гипотеза.",
+      "matched_roles": [{ "role": "transit", "support": 0.585 }],
+      "score_components": { "M": 0.585, "A": 0.77, "C": 0.2, "H": 0.75 },
+      "warnings": [], "depth": 1, "is_seed": false,
+      "in_deg": 1, "out_deg": 1, "in_tiyn": 25000000, "out_tiyn": 24000000,
+      "in_tx": 3, "out_tx": 2, "pass_through": 0.96,
+      "seed_reach_count": 1, "betweenness": 0.75, "last_in": "2026-07-28",
+      "days_after_last_in": 3, "boundary": false, "isolated": false
+    },
+    {
+      "gid": "6000000001", "role": "transit", "role_score": 0.65,
+      "cluster_id": 0, "priority_score": 0.4325,
+      "evidence": "Входящий и исходящий объёмы равны; узел лежит на одном наблюдаемом маршруте.",
+      "matched_roles": [{ "role": "transit", "support": 0.65 }],
+      "score_components": { "M": 0.65, "A": 0.5, "C": 0.2, "H": 0.1 },
+      "warnings": [], "depth": 1, "is_seed": false,
+      "in_deg": 1, "out_deg": 1, "in_tiyn": 13000000, "out_tiyn": 13000000,
+      "in_tx": 1, "out_tx": 1, "pass_through": 1,
+      "seed_reach_count": 1, "betweenness": 0.1, "last_in": "2026-07-24",
+      "days_after_last_in": 7, "boundary": false, "isolated": false
+    },
+    {
+      "gid": "6000000002", "role": "transit", "role_score": 0.65,
+      "cluster_id": 0, "priority_score": 0.4325,
+      "evidence": "Входящий и исходящий объёмы равны; узел лежит на одном наблюдаемом маршруте.",
+      "matched_roles": [{ "role": "transit", "support": 0.65 }],
+      "score_components": { "M": 0.65, "A": 0.5, "C": 0.2, "H": 0.1 },
+      "warnings": [], "depth": 1, "is_seed": false,
+      "in_deg": 1, "out_deg": 1, "in_tiyn": 13000000, "out_tiyn": 13000000,
+      "in_tx": 1, "out_tx": 1, "pass_through": 1,
+      "seed_reach_count": 1, "betweenness": 0.1, "last_in": "2026-07-24",
+      "days_after_last_in": 7, "boundary": false, "isolated": false
+    },
+    {
+      "gid": "7000000003", "role": "consolidator", "role_score": 0.675,
+      "cluster_id": 0, "priority_score": 0.57625,
+      "evidence": "Три входящих контрагента и равные суммарные вход и выход; роли основаны на структуре графа.",
+      "matched_roles": [
+        { "role": "consolidator", "support": 0.675 },
+        { "role": "transit", "support": 0.65 }
+      ],
+      "score_components": { "M": 0.675, "A": 0.85, "C": 0.2, "H": 0.3 },
+      "warnings": [], "depth": 2, "is_seed": false,
+      "in_deg": 3, "out_deg": 1, "in_tiyn": 50000000, "out_tiyn": 50000000,
+      "in_tx": 4, "out_tx": 2, "pass_through": 1,
+      "seed_reach_count": 1, "betweenness": 0.3, "last_in": "2026-07-25",
+      "days_after_last_in": 6, "boundary": false, "isolated": false
+    },
+    {
+      "gid": "7000000004", "role": "peripheral", "role_score": 0,
+      "cluster_id": 0, "priority_score": 0.13,
+      "evidence": "Видны входящий объём 500 000 KZT и один исходящий перевод; специальная роль не установлена.",
+      "matched_roles": [], "score_components": { "M": 0, "A": 0.26, "C": 0.2, "H": 0.08 },
+      "warnings": [], "depth": 3, "is_seed": false,
+      "in_deg": 1, "out_deg": 1, "in_tiyn": 50000000, "out_tiyn": 2000000,
+      "in_tx": 2, "out_tx": 1, "pass_through": 0.04,
+      "seed_reach_count": 1, "betweenness": 0.08, "last_in": "2026-07-23",
+      "days_after_last_in": 8, "boundary": false, "isolated": false
+    },
+    {
+      "gid": "9007199254740997", "role": "peripheral", "role_score": 0,
+      "cluster_id": 0, "priority_score": 0.082,
+      "evidence": "Узел находится на глубине 4; исходящие за пределами наблюдения не видны.",
+      "matched_roles": [], "score_components": { "M": 0, "A": 0.05, "C": 0.2, "H": 0.18 },
+      "warnings": ["boundary"], "depth": 4, "is_seed": false,
+      "in_deg": 1, "out_deg": 0, "in_tiyn": 2000000, "out_tiyn": 0,
+      "in_tx": 1, "out_tx": 0, "pass_through": null,
+      "seed_reach_count": 1, "betweenness": 0.18, "last_in": "2026-07-30",
+      "days_after_last_in": 1, "boundary": true, "isolated": false
+    },
+    {
+      "gid": "7000000006", "role": "peripheral", "role_score": 0,
+      "cluster_id": 1, "priority_score": 0,
+      "evidence": "Нет наблюдаемых входящих или исходящих рёбер; изолят сохранён отдельным узлом.",
+      "matched_roles": [], "score_components": { "M": 0, "A": 0, "C": 0, "H": 0 },
+      "warnings": ["isolated"], "depth": 0, "is_seed": true,
+      "in_deg": 0, "out_deg": 0, "in_tiyn": 0, "out_tiyn": 0,
+      "in_tx": 0, "out_tx": 0, "pass_through": null,
+      "seed_reach_count": 0, "betweenness": 0, "last_in": null,
+      "days_after_last_in": null, "boundary": false, "isolated": true
+    }
+  ],
+  "edges": [
+    { "src": "5010000001", "dst": "9007199254740993", "sum_tiyn": 25000000, "n_tx": 3, "depth": 1 },
+    { "src": "5010000001", "dst": "6000000001", "sum_tiyn": 13000000, "n_tx": 1, "depth": 1 },
+    { "src": "5010000001", "dst": "6000000002", "sum_tiyn": 13000000, "n_tx": 1, "depth": 1 },
+    { "src": "9007199254740993", "dst": "7000000003", "sum_tiyn": 24000000, "n_tx": 2, "depth": 2 },
+    { "src": "6000000001", "dst": "7000000003", "sum_tiyn": 13000000, "n_tx": 1, "depth": 2 },
+    { "src": "6000000002", "dst": "7000000003", "sum_tiyn": 13000000, "n_tx": 1, "depth": 2 },
+    { "src": "7000000003", "dst": "7000000004", "sum_tiyn": 50000000, "n_tx": 2, "depth": 3 },
+    { "src": "7000000004", "dst": "9007199254740997", "sum_tiyn": 2000000, "n_tx": 1, "depth": 4 }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 0, "n_nodes": 7, "n_seed": 1,
+      "sum_tiyn_internal": 153000000, "sum_kzt_internal": "1530000.00",
+      "top_gids": ["9007199254740993", "7000000003", "6000000001", "6000000002", "5010000001"],
+      "hypothesis": "Искусственная группа из семи связанных узлов; значения нужны только для демонстрации интерфейса."
+    },
+    {
+      "cluster_id": 1, "n_nodes": 1, "n_seed": 1,
+      "sum_tiyn_internal": 0, "sum_kzt_internal": "0.00",
+      "top_gids": ["7000000006"],
+      "hypothesis": "Изолированный искусственный seed; отсутствие рёбер не является оценкой риска."
+    }
+  ],
+  "top_nodes": [
+    { "rank": 1, "gid": "9007199254740993", "role": "transit", "priority_score": 0.58825, "why": "Почти равные наблюдаемые вход и выход; один seed достигает узла. Требует проверки по исходным данным." },
+    { "rank": 2, "gid": "7000000003", "role": "consolidator", "priority_score": 0.57625, "why": "Три входящих контрагента и равные суммы входа и выхода; общий контроль не установлен." },
+    { "rank": 3, "gid": "6000000001", "role": "transit", "priority_score": 0.4325, "why": "Равные входящий и исходящий объёмы на одном маршруте; данные искусственные." },
+    { "rank": 4, "gid": "6000000002", "role": "transit", "priority_score": 0.4325, "why": "Равные входящий и исходящий объёмы на одном маршруте; данные искусственные." },
+    { "rank": 5, "gid": "5010000001", "role": "peripheral", "priority_score": 0.132, "why": "Seed с тремя исходящими связями; входящий поток в наблюдаемом фрагменте неполон." },
+    { "rank": 6, "gid": "7000000004", "role": "peripheral", "priority_score": 0.13, "why": "Есть вход и один выход, но специальная структурная роль не установлена." },
+    { "rank": 7, "gid": "9007199254740997", "role": "peripheral", "priority_score": 0.082, "why": "Граница четырёх шагов; исходящие за пределами наблюдения не видны." },
+    { "rank": 8, "gid": "7000000006", "role": "peripheral", "priority_score": 0, "why": "Изолят: 0 входящих и 0 исходящих рёбер в учебном фрагменте." }
+  ]
+}

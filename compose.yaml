@@ -1,7 +1,16 @@
 services:
+  prepare:
+    image: jigas-graph-money:local
+    entrypoint: ["python", "scripts/prepare_data.py"]
+    command: []
+    volumes:
+      - ./track_data:/app/track_data:ro
+      - ./data:/app/data
+
   pipeline:
     build: .
     image: jigas-graph-money:local
+    cpus: 12
     volumes:
       - ./data:/app/data:ro
       - ./out:/app/out
