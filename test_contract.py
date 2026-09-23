@@ -242,7 +242,10 @@ def test_graph_features_and_report(starter: Any) -> None:
                 f"nodes_roles.csv rounded or dropped gid={BIG_GID}")
         require(str(BIG_GID) in set(top_csv["gid"].dropna()),
                 f"top_nodes.csv rounded or dropped gid={BIG_GID}")
-        clusters_csv = pd.read_csv(out_dir / "clusters.csv", dtype={"top_gids": "string"})
+        clusters_csv = pd.read_csv(
+            out_dir / "clusters.csv",
+            dtype={"top_gids": "string", "sum_kzt_internal": "string"},
+        )
         for cell in clusters_csv["top_gids"].dropna():
             values = json.loads(cell)
             require(all(isinstance(gid, str) for gid in values),
@@ -363,7 +366,10 @@ def validate_csv_release(data_dir: Path, out_dir: Path) -> None:
     edges = pd.read_parquet(data_dir / "edges.parquet")
     expected_gids = {str(int(gid)) for gid in nodes["gid"]}
     nodes_csv = pd.read_csv(out_dir / "nodes_roles.csv", dtype={"gid": "string"})
-    clusters_csv = pd.read_csv(out_dir / "clusters.csv", dtype={"top_gids": "string"})
+    clusters_csv = pd.read_csv(
+        out_dir / "clusters.csv",
+        dtype={"top_gids": "string", "sum_kzt_internal": "string"},
+    )
     top_csv = pd.read_csv(out_dir / "top_nodes.csv", dtype={"gid": "string"})
 
     for filename, frame in (
