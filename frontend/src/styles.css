@@ -121,8 +121,10 @@ h2 { margin: 0; color: var(--navy); font-size: 18px; font-weight: 720; letter-sp
 .edge-table-scroll { border: 1px solid #edf1f2; border-radius: 8px; }
 .edge-table-scroll table { min-width: 650px; }
 .edge-empty { border: 1px dashed var(--line); border-radius: 8px; }
-.analysis-workspace { display: grid; grid-template-columns: minmax(230px, .85fr) minmax(430px, 1.8fr) minmax(280px, 1.1fr); align-items: start; gap: 14px; }
+.analysis-workspace { display: grid; grid-template-columns: minmax(0, 2.65fr) minmax(280px, 1.1fr); align-items: start; gap: 14px; }
 .analysis-workspace > .panel { align-self: start; }
+.analysis-left { display: grid; grid-template-columns: minmax(230px, .85fr) minmax(430px, 1.8fr); align-items: start; gap: 14px; min-width: 0; }
+.analysis-left .community-panel { grid-column: 1 / -1; }
 .top-panel { container-type: inline-size; }
 .table-scroll { max-width: 100%; overflow-x: auto; border-top: 1px solid #edf1f2; }
 table { width: 100%; border-collapse: collapse; text-align: left; }
@@ -324,18 +326,20 @@ input:focus-visible, select:focus-visible { outline: 3px solid rgba(40, 111, 105
 .graph-counters span, th, .cluster-meta, .cluster-volume, .edge-pagination, .legend-key, .legend-scale { font-size: 11px; }
 .detail-panel { container-type: inline-size; }
 .workspace-nav { display: none; }
-#detail-title, #graph-title, #top-title { scroll-margin-top: 16px; }
+#detail-title, #graph-title, #top-title, #community-title { scroll-margin-top: 16px; }
 
 @media (max-width: 1150px) {
-  .analysis-workspace { grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); }
-  .analysis-workspace .graph-panel { grid-column: 1 / -1; grid-row: 2; }
+  .analysis-workspace { grid-template-columns: minmax(0, 1fr); }
+  .analysis-workspace .detail-panel { grid-row: 1; }
+  .analysis-left { grid-row: 2; }
 }
 @media (max-width: 900px) {
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .analysis-workspace, .secondary-grid { grid-template-columns: minmax(0, 1fr); }
-  .analysis-workspace .detail-panel { grid-column: 1; grid-row: 1; }
-  .analysis-workspace .graph-panel { grid-column: 1; grid-row: 2; }
-  .analysis-workspace .top-panel { grid-column: 1; grid-row: 3; }
+  .analysis-left { grid-template-columns: minmax(0, 1fr); }
+  .analysis-left .graph-panel { grid-row: 1; }
+  .analysis-left .top-panel { grid-row: 2; }
+  .analysis-left .community-panel { grid-row: 3; }
   .workspace-heading { align-items: stretch; flex-direction: column; }
   .client-search { width: 100%; }
   .workspace-nav { display: flex; gap: 7px; margin: 0 0 12px; }

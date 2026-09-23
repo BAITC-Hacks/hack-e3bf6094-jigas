@@ -516,14 +516,15 @@ export default function App() {
           </section>
           <nav className="workspace-nav" aria-label="Разделы анализа"><a href="#detail-title">Карточка</a><a href="#graph-title">Связи</a><a href="#top-title">Клиенты</a><a href="#community-title">Структура</a></nav>
           <section className="analysis-workspace" aria-label="Рабочая область анализа">
-            <TopNodes topNodes={filteredTopNodes} allNodes={report.nodes} boundaryGids={report.boundary_gids_by_inflow} nodeIndex={nodeIndex} topRankByGid={topRankByGid} parameters={report.parameters} filters={filters} selectedGid={selectedGid} onSelect={selectAndReveal} />
-            <GraphView report={report} selectedGid={selectedGid} onSelectGid={selectFromGraph} filters={filters} onFiltersChange={setFilters} routeSteps={routeMode && report.seed_routes_by_gid?.[selectedGid]?.[routeMode]?.steps} sccFocusId={sccFocusId} onClearScc={() => setSccFocusId(null)} />
+            <div className="analysis-left">
+              <TopNodes topNodes={filteredTopNodes} allNodes={report.nodes} boundaryGids={report.boundary_gids_by_inflow} nodeIndex={nodeIndex} topRankByGid={topRankByGid} parameters={report.parameters} filters={filters} selectedGid={selectedGid} onSelect={selectAndReveal} />
+              <GraphView report={report} selectedGid={selectedGid} onSelectGid={selectFromGraph} filters={filters} onFiltersChange={setFilters} routeSteps={routeMode && report.seed_routes_by_gid?.[selectedGid]?.[routeMode]?.steps} sccFocusId={sccFocusId} onClearScc={() => setSccFocusId(null)} />
+              {Array.isArray(report.community_edges) && Array.isArray(report.sccs) && report.coverage && <CommunityView report={report} onSelectGid={selectAndReveal} onFocusScc={focusScc} />}
+            </div>
             <NodeDetails node={selectedNode} dailyProfile={report.daily_profiles_by_gid?.[selectedGid]} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} tiedNodes={tiedNodes} topRankByGid={topRankByGid} parameters={report.parameters} selectedGid={selectedGid} onSelect={selectAndReveal} routes={report.seed_routes_by_gid} onShowRoute={showRoute} />
           </section>
         </>
       )}
-
-      {Array.isArray(report.community_edges) && Array.isArray(report.sccs) && report.coverage && <CommunityView report={report} onSelectGid={selectAndReveal} onFocusScc={focusScc} />}
 
       <section className="secondary-grid">
         <ClusterList clusters={report.clusters} nodes={report.nodes} onSelect={selectAndReveal} />
