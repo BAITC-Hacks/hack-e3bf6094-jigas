@@ -142,6 +142,46 @@ def make_sample() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     return edges, nodes, tx
 
 
+def test_temporal_routes() -> None:
+    """Exercise equal/reversed dates, cycles, duplicates, exact IDs and hop cap."""
+    from hackalem.graph import enrich_temporal_routes
+
+    gids = [2, 10, 20, 30, 40, 50, 60, 80, 90, BIG_GID]
+    graph = nx.DiGraph()
+    graph.add_nodes_from(gids)
+    rows = [
+        (2, 20, "2026-07-02"), (2, 20, "2026-07-02"),
+        (10, 20, "2026-07-01"),
+        (20, 30, "2026-07-02"), (20, 30, "2026-07-03"),
+        (30, 40, "2026-07-04"), (40, 50, "2026-07-05"),
+        (50, 60, "2026-07-06"), (40, 2, "2026-07-06"),
+        (2, BIG_GID, "2026-07-02"),
+        (30, 80, "2026-07-01"),
+    ]
+    graph.add_edges_from((src, dst) for src, dst, _ in rows)
+    frame = pd.DataFrame({"gid": gids, "is_seed": [gid in {2, 10} for gid in gids]})
+    tx = pd.DataFrame(rows, columns=["src", "dst", "date"])
+    tx["date"] = pd.to_datetime(tx["date"])
+    tx["sum_tiyn"] = 500_000
+    enriched, routes = enrich_temporal_routes(graph, frame, tx)
+    by_gid = {int(row.gid): row for row in enriched.itertuples(index=False)}
+    require(by_gid[30].seed_reach_strict_count == 2 and by_gid[30].seed_reach_same_day_count == 2,
+            "HA-16: strict and same-day count two distinct seeds")
+    require(by_gid[60].seed_reach_strict_count == 0 and routes["60"]["strict"] is None,
+            "HA-16: fifth hop must not create a route")
+    require(by_gid[80].seed_reach_strict_count == 0 and by_gid[80].seed_reach_same_day_count == 0,
+            "HA-16: reverse date must not create a route")
+    require(routes["2"]["strict"]["seed_gid"] == "10" and by_gid[2].seed_reach_strict_count == 1,
+            "HA-16: a seed must not count its own cycle, but may be reached from another seed")
+    require(routes["90"]["strict"] is None and by_gid[90].seed_reach_same_day_count == 0,
+            "HA-16: isolate must not have a witness")
+    require(routes[str(BIG_GID)]["strict"]["seed_gid"] == "2",
+            "HA-16: large exact IDs must remain strings")
+    require([step["tx_row"] for step in routes["30"]["strict"]["steps"]] == [0, 4]
+            and [step["tx_row"] for step in routes["30"]["same_day"]["steps"]] == [0, 3],
+            "HA-16: choose the smallest numeric seed, shortest route, then earliest arrival")
+
+
 def without_stdout(function: Callable[..., Any], *args: Any) -> Any:
     with contextlib.redirect_stdout(io.StringIO()):
         return function(*args)
@@ -999,6 +1039,68 @@ def validate_release_assets(out_dir: Path, validation: dict[str, Any]) -> None:
                 f"validation.json: SHA-256 mismatch for {relative_name}")
 
 
+def validate_p1_temporal_routes(
+    report: dict[str, Any], nodes_by_gid: dict[str, dict[str, Any]],
+    raw_nodes: pd.DataFrame, raw_tx: pd.DataFrame,
+) -> None:
+    fields = ("seed_reach_strict_count", "seed_reach_same_day_count")
+    present = [any(field in node for field in fields) for node in nodes_by_gid.values()]
+    routes = report.get("seed_routes_by_gid")
+    if not any(present) and routes is None:
+        return  # Older P0 releases intentionally omit the whole optional block.
+    require(all(present) and isinstance(routes, dict) and set(routes) == set(nodes_by_gid),
+            "HA-16: partial temporal route block")
+    seed_ids = {str(int(row.gid)) for row in raw_nodes.itertuples(index=False) if bool(row.is_seed)}
+    raw_rows = list(raw_tx[["src", "dst", "date", "sum_kzt"]].itertuples(index=False, name=None))
+    for gid, node in nodes_by_gid.items():
+        strict = node.get(fields[0])
+        same_day = node.get(fields[1])
+        monthly = node.get("seed_reach_count")
+        require(all(isinstance(value, int) and not isinstance(value, bool) for value in (strict, same_day, monthly))
+                and 0 <= strict <= same_day <= monthly,
+                f"HA-16: invalid temporal counts for {gid}")
+        modes = routes[gid]
+        require(isinstance(modes, dict) and set(modes) == {"strict", "same_day"},
+                f"HA-16: missing route mode for {gid}")
+        for mode, count in (("strict", strict), ("same_day", same_day)):
+            witness = modes[mode]
+            require((witness is None) == (count == 0),
+                    f"HA-16: count/witness contradiction for {gid} {mode}")
+            if witness is None:
+                continue
+            require(isinstance(witness, dict) and set(witness) == {"seed_gid", "steps"}
+                    and witness["seed_gid"] in seed_ids and witness["seed_gid"] != gid,
+                    f"HA-16: invalid seed witness for {gid} {mode}")
+            steps = witness["steps"]
+            require(isinstance(steps, list) and 1 <= len(steps) <= 4,
+                    f"HA-16: invalid hop count for {gid} {mode}")
+            predecessor = witness["seed_gid"]
+            previous_day = None
+            for step in steps:
+                require(isinstance(step, dict) and set(step) == {"src", "dst", "date", "sum_tiyn", "tx_row"},
+                        f"HA-16: invalid step payload for {gid} {mode}")
+                row_number = step["tx_row"]
+                require(isinstance(row_number, int) and not isinstance(row_number, bool)
+                        and 0 <= row_number < len(raw_rows),
+                        f"HA-16: invalid tx_row for {gid} {mode}")
+                src, dst, day, kzt = raw_rows[row_number]
+                expected_day = pd.Timestamp(day).date().isoformat()
+                require(step["src"] == predecessor and step["src"] == str(int(src))
+                        and step["dst"] == str(int(dst)) and step["date"] == expected_day
+                        and step["sum_tiyn"] == round(float(kzt) * 100),
+                        f"HA-16: step does not match raw transaction {row_number}")
+                require(previous_day is None or (expected_day >= previous_day if mode == "same_day" else expected_day > previous_day),
+                        f"HA-16: incompatible dates for {gid} {mode}")
+                previous_day, predecessor = expected_day, step["dst"]
+            require(predecessor == gid, f"HA-16: route ends at wrong gid {gid} {mode}")
+    require(report.get("parameters", {}).get("temporal_routes", {}).get("max_hops") == 4,
+            "HA-16: missing temporal route parameters")
+    if report.get("dataset", {}).get("sha256_files", {}).get("transactions.parquet") == "c30c5317b5439591dde86f2058dc47a3d19b2900c055ded994fe547f6fb7e7da":
+        require(sum(node[fields[0]] for node in nodes_by_gid.values()) == 1623
+                and sum(node[fields[1]] for node in nodes_by_gid.values()) == 1898,
+                "HA-16: official dataset temporal control totals differ")
+
+
 def validate_report_release(
     data_dir: Path,
     out_dir: Path,
@@ -1135,6 +1237,7 @@ def validate_report_release(
                          f"gid={gid}: report top priority differs from top_nodes.csv")
 
     validate_p1_daily_profiles(report, nodes_by_gid, raw_nodes, raw_tx)
+    validate_p1_temporal_routes(report, nodes_by_gid, raw_nodes, raw_tx)
     validate_release_assets(out_dir, validation)
 
 
@@ -1565,6 +1668,7 @@ def main() -> int:
         test_graph_features_and_report(starter)
         test_ha18_hypothesis_fixtures(starter)
         test_observed_daily_profiles(starter)
+        test_temporal_routes()
         test_release_json_compatibility(starter)
         test_roles_and_priority(starter)
         validate_csv_release(args.data, args.out)

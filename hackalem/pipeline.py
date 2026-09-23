@@ -14,7 +14,7 @@ import time
 import uuid
 
 from .validation import load, sanity_check
-from .graph import build_graph, basic_features, enrich_features, enrich_observed_features
+from .graph import build_graph, basic_features, enrich_features, enrich_observed_features, enrich_temporal_routes
 from .scoring import assign_roles, compute_priority
 from .clusters import LOUVAIN_RESOLUTION, LOUVAIN_SEED, cluster_nodes, summarize_clusters
 from .report import build_report
@@ -56,6 +56,7 @@ def run_pipeline(data_dir: Path, out_dir: Path) -> dict:
         graph = build_graph(edges, nodes)
         features = enrich_features(graph, basic_features(graph, nodes), tx)
         features, daily_profiles_by_gid = enrich_observed_features(graph, features, tx)
+        features, seed_routes_by_gid = enrich_temporal_routes(graph, features, tx)
         timings["graph_features_seconds"] = time.perf_counter() - checkpoint
 
         phase = "roles_priority"
@@ -107,17 +108,15 @@ def run_pipeline(data_dir: Path, out_dir: Path) -> dict:
                     "missing_direction": 0,
                 },
             },
+            "temporal_routes": {"max_hops": 4, "strict_date_order": ">", "same_day_date_order": ">=", "waiting": "within_period", "witness_limit": 1, "amount_attribution": False},
         }
 
         phase = "report"
         checkpoint = time.perf_counter()
         report = build_report(
-            features,
-            edges,
-            clusters,
-            metadata,
-            parameters,
+            features, edges, clusters, metadata, parameters,
             daily_profiles_by_gid=daily_profiles_by_gid,
+            seed_routes_by_gid=seed_routes_by_gid,
         )
         timings["report_seconds"] = time.perf_counter() - checkpoint
 

@@ -1,6 +1,7 @@
 """Construct the directed graph and observed node features."""
 
 from collections import deque
+from datetime import date
 import time
 import numpy as np
 import pandas as pd
@@ -196,6 +197,63 @@ def enrich_observed_features(
                 )
 
     return result, daily_profiles_by_gid
+def enrich_temporal_routes(G: nx.DiGraph, df: pd.DataFrame, tx: pd.DataFrame):
+    """Count date-compatible seed reach and keep one verifiable route per mode."""
+    if {int(gid) for gid in df["gid"]} != set(G.nodes):
+        raise ValueError("temporal route rows must cover exactly the graph nodes")
+    required = {"src", "dst", "date", "sum_tiyn"}
+    if not required.issubset(tx.columns):
+        raise ValueError("temporal routes require validated transaction rows")
+    events = []
+    for row_number, row in enumerate(tx[["src", "dst", "date", "sum_tiyn"]].itertuples(index=False, name=None)):
+        src, dst, day, amount = row
+        day = pd.Timestamp(day).date()
+        amount = int(amount)
+        if amount <= 0 or amount > 2**53 - 1 or (int(src), int(dst)) not in G.edges:
+            raise ValueError("temporal route transaction is invalid")
+        events.append((day, int(src), int(dst), amount, row_number))
+    events.sort()
+
+    gids = [int(gid) for gid in df["gid"]]
+    counts = {mode: {gid: 0 for gid in gids} for mode in ("strict", "same_day")}
+    routes = {str(gid): {"strict": None, "same_day": None} for gid in gids}
+    seeds = sorted(int(row.gid) for row in df[["gid", "is_seed"]].itertuples(index=False) if bool(row.is_seed))
+    for seed in seeds:
+        for mode in ("strict", "same_day"):
+            arrivals = {seed: (date.min, ())}
+            reached = set()
+            for _ in range(4):
+                following = {}
+                for event_index, (day, src, dst, _amount, _row_number) in enumerate(events):
+                    previous = arrivals.get(src)
+                    if previous is None or (day < previous[0] if mode == "same_day" else day <= previous[0]):
+                        continue
+                    existing = following.get(dst)
+                    if existing is None or day < existing[0]:
+                        following[dst] = (day, previous[1] + (event_index,))
+                for gid, (_day, path) in following.items():
+                    if gid == seed:
+                        continue
+                    reached.add(gid)
+                    slot = routes[str(gid)][mode]
+                    if slot is None:
+                        routes[str(gid)][mode] = {
+                            "seed_gid": str(seed),
+                            "steps": [
+                                {"src": str(events[i][1]), "dst": str(events[i][2]),
+                                 "date": events[i][0].isoformat(), "sum_tiyn": events[i][3],
+                                 "tx_row": events[i][4]}
+                                for i in path
+                            ],
+                        }
+                arrivals = following
+            for gid in reached:
+                counts[mode][gid] += 1
+
+    enriched = df.copy()
+    enriched["seed_reach_strict_count"] = enriched["gid"].map(counts["strict"]).astype("int64")
+    enriched["seed_reach_same_day_count"] = enriched["gid"].map(counts["same_day"]).astype("int64")
+    return enriched, routes
 
 
 def hints(G: nx.DiGraph, df: pd.DataFrame):
