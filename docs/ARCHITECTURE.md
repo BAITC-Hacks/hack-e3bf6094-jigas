@@ -1,6 +1,6 @@
 # Архитектура
 
-Текущий React-кандидат использует Vite и существующий vis-network; Python выпускает отдельный `report.json`, три CSV и локальные assets. Аналитические формулы и JSON `schema_version=1.0` сохранены. Контракт — [SPEC 1.4](SPEC.md), исполнители и зависимости — [PLAN 1.3](PLAN.md). Фактические прогоны и оставшиеся проверки записаны в [validation.md](validation.md).
+Текущий React-выпуск использует Vite и существующий vis-network; Python выпускает отдельный `report.json`, три CSV и локальные assets. Аналитические формулы и JSON `schema_version=1.0` сохранены. Контракт — [SPEC 1.4](SPEC.md), исполнители и зависимости — [PLAN 1.3](PLAN.md). Фактические прогоны и оставшиеся проверки записаны в [validation.md](validation.md).
 
 ```mermaid
 flowchart LR
@@ -29,6 +29,6 @@ Docker сохраняет `prepare` и `pipeline`: входной mount read-onl
 
 Текущий общий контракт — PRODUCT_SPEC 1.3 / SPEC 1.4 / PLAN 1.3. Реализованная HA-17 добавила объяснения в `hackalem/scoring.py`/report, а React показывает причины, общую шкалу рёбер, вторичные роли и равные P. HA-16 и HA-14 остаются P1-заделом: датированные counts/свидетели и модуль `hackalem/requests.py` запланированы, но файла requests.py и этих функций нет в текущем React-выпуске. Основные роли/P/CSV-схемы сохранены. Очередь P1: HA-11 → HA-14 → HA-16 → HA-13; общий viewer и одно состояние selectedGid.
 
-Исторический baseline aed8e63 прошёл пять Docker-контрактов (median 4,327 с, maximum 4,642 с) и headless Chrome/file:// smoke с блокировкой HTTP(S). Отдельно React-кандидат прошёл пять выпусков и localhost Playwright smoke; факты и ограничения записаны в [validation.md](validation.md). Headed review и Linux clean-clone остаются отдельными проверками. Временный выпуск остаётся внутри out-mount, успешный manifest публикуется последним.
+Исторический baseline aed8e63 прошёл пять Docker-контрактов (median 4,327 с, maximum 4,642 с) и headless Chrome/file:// smoke с блокировкой HTTP(S). Итоговый React-выпуск `a086162` прошёл пять Docker-выпусков, offline и localhost Playwright; факты и ограничения записаны в [validation.md](validation.md). Headed review и Linux clean-clone остаются отдельными проверками. Временный выпуск остаётся внутри out-mount, успешный manifest публикуется последним.
 
 Текущие владельцы файлов, изоляция Docker-образов и передача веток — [PARALLEL_WORK](PARALLEL_WORK.md). Наличие принятых модулей в этой схеме не означает их реализации; финальная приёмка относится к фактическому SHA.
