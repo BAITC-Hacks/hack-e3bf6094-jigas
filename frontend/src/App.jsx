@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import GraphView from './components/GraphView.jsx';
 import { formatInteger, formatPeriod, formatScore, formatTiyn, loadReport, warningText } from './report.js';
-import { filterTopNodes, nodesWithExactPriority } from './graphModel.js';
+import { filterTopNodes, matchesGraphFilters, nodesWithExactPriority } from './graphModel.js';
+
+const CLIENTS_PAGE_SIZE = 50;
 
 function LoadingView() {
   return (
@@ -88,38 +90,62 @@ function ReportOverview({ report }) {
   );
 }
 
-function TopNodes({ topNodes, nodeIndex, selectedGid, onSelect }) {
-  const rows = topNodes;
+function TopNodes({ topNodes, allNodes, nodeIndex, topRankByGid, filters, selectedGid, onSelect }) {
+  const [mode, setMode] = useState('top');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const allMatches = useMemo(() => allNodes.filter((node) => matchesGraphFilters(node, filters)
+    && node.gid.includes(query.trim())), [allNodes, filters, query]);
+  useEffect(() => setPage(0), [mode, query, filters]);
+  const rows = mode === 'top'
+    ? topNodes
+    : allMatches.slice(page * CLIENTS_PAGE_SIZE, (page + 1) * CLIENTS_PAGE_SIZE).map((node) => ({
+      ...node, rank: topRankByGid.get(node.gid) ?? null,
+    }));
+  const total = mode === 'top' ? topNodes.length : allMatches.length;
   return (
     <section className="panel top-panel" aria-labelledby="top-title">
       <div className="panel-head">
-        <div><p className="eyebrow">Список приоритета</p><h2 id="top-title">Топ-20 клиентов</h2></div>
-        <span className="count-pill">{rows.length} строк</span>
+        <div><p className="eyebrow">Список клиентов</p><h2 id="top-title">Кого проверить</h2></div>
+        <span className="count-pill">{formatInteger(total)} найдено</span>
+      </div>
+      <div className="list-controls">
+        <div className="list-tabs" role="group" aria-label="Показать клиентов">
+          <button type="button" aria-pressed={mode === 'top'} onClick={() => setMode('top')}>Топ-20</button>
+          <button type="button" aria-pressed={mode === 'all'} onClick={() => setMode('all')}>Все {formatInteger(allNodes.length)}</button>
+        </div>
+        {mode === 'all' && <label className="table-search">Найти по части ID
+          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Введите цифры ID" />
+        </label>}
       </div>
       {rows.length === 0 ? (
-        <div className="empty-state"><strong>Нет клиентов для списка</strong><span>Проверьте фильтры: ни одна строка top_nodes им не соответствует.</span></div>
+        <div className="empty-state"><strong>Клиенты не найдены</strong><span>{mode === 'top' ? 'В топе нет клиентов с этими фильтрами. Откройте полный список.' : 'Измените запрос или сбросьте фильтры графа.'}</span></div>
       ) : (
         <div className="table-scroll">
           <table>
-            <thead><tr><th scope="col">Ранг</th><th scope="col">Клиент</th><th scope="col">Роль</th><th scope="col">Приоритет</th><th scope="col">Основание</th></tr></thead>
+            <thead><tr><th scope="col">Топ</th><th scope="col">Клиент</th><th scope="col">Роль</th><th scope="col">Приоритет</th></tr></thead>
             <tbody>
               {rows.map((item) => (
                 <tr key={item.gid} className={selectedGid === item.gid ? 'is-selected' : ''}>
-                  <td className="rank-cell">{formatInteger(item.rank)}</td>
+                  <td className="rank-cell">{item.rank == null ? '—' : formatInteger(item.rank)}</td>
                   <td>
                     <button className="gid-action" type="button" aria-pressed={selectedGid === item.gid} onClick={() => onSelect(item.gid)}>{item.gid}</button>
-                    <details className="mobile-reason"><summary>Основание</summary><p>{item.why || nodeIndex.get(item.gid)?.evidence || 'Подробная причина не приложена.'}</p></details>
+                    <details className="mobile-reason"><summary>Основание</summary><p>{item.why || item.evidence || nodeIndex.get(item.gid)?.evidence || 'Подробная причина не приложена.'}</p></details>
                   </td>
                   <td><RoleTag role={item.role} /></td>
                   <td className="numeric-cell">{formatScore(item.priority_score)}</td>
-                  <td className="reason-cell">{item.why || nodeIndex.get(item.gid)?.evidence || 'Подробная причина не приложена.'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      <p className="panel-footnote">Порядок и оценки рассчитаны Python. Интерфейс их не пересчитывает.</p>
+      {mode === 'all' && total > CLIENTS_PAGE_SIZE && <div className="list-pagination">
+        <span>{page * CLIENTS_PAGE_SIZE + 1}–{Math.min((page + 1) * CLIENTS_PAGE_SIZE, total)} из {formatInteger(total)}</span>
+        <button className="button button-quiet" type="button" disabled={page === 0} onClick={() => setPage(page - 1)}>Назад</button>
+        <button className="button button-quiet" type="button" disabled={(page + 1) * CLIENTS_PAGE_SIZE >= total} onClick={() => setPage(page + 1)}>Далее</button>
+      </div>}
+      <p className="panel-footnote">Оценки рассчитаны Python. Ранг указан только для топ-20; полный список идёт по ID.</p>
     </section>
   );
 }
@@ -175,7 +201,7 @@ function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, selecte
   return (
     <section className="panel detail-panel" aria-labelledby="detail-title">
       <div className="panel-head detail-head">
-        <div><p className="eyebrow">Карточка клиента{topIndex ? ` · ранг ${formatInteger(topIndex)}` : ''}</p><h2 id="detail-title" className="detail-gid">{node.gid}</h2><CopyGidButton gid={node.gid} /></div>
+        <div><p className="eyebrow">Карточка клиента{topIndex ? ` · ранг ${formatInteger(topIndex)}` : ''}</p><h2 id="detail-title" className="detail-gid" tabIndex="-1">{node.gid}</h2><CopyGidButton gid={node.gid} /></div>
         <RoleTag role={node.role} />
       </div>
       <div className="score-row">
@@ -183,37 +209,32 @@ function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, selecte
         <div><span>Оценка роли</span><strong>{formatScore(node.role_score)}</strong></div>
         <div><span>Кластер</span><strong>{node.cluster_id ?? '—'}</strong></div>
       </div>
-      <div className="priority-ties">
-        <div className="priority-tie-heading"><strong>Узлы с точно равным приоритетом</strong><span>{formatInteger(tiedNodes.length)}</span></div>
-        <p>Сравнены сохранённые значения P без округления. Порядок сохранён из массива nodes.</p>
-        {tiedNodes.length > 0 && (
-          <details>
-            <summary>Показать все узлы ({formatInteger(tiedNodes.length)})</summary>
-            <ul className="priority-tie-list">
-              {tiedNodes.map((tiedNode) => (
-                <li key={tiedNode.gid}>
-                  <button className="gid-action" type="button" aria-pressed={selectedGid === tiedNode.gid} onClick={() => onSelect(tiedNode.gid)}>{tiedNode.gid}</button>
-                  <RoleTag role={tiedNode.role} />
-                  <span>{topRankByGid.has(tiedNode.gid) ? 'Ранг ' + formatInteger(topRankByGid.get(tiedNode.gid)) : 'Вне top-20'}</span>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-      </div>
       <div className="priority-reason"><strong>Ведущие основания приоритета</strong><p>{topItem?.why || node.why || node.evidence || 'Подробная причина не приложена к этому отчёту.'}</p></div>
-      {node.evidence && node.evidence !== (topItem?.why || node.why) && <p className="evidence-copy">{node.evidence}</p>}
+      {node.evidence && node.evidence !== (topItem?.why || node.why) && <details className="evidence-details"><summary>Дополнительные данные расчёта</summary><p>{node.evidence}</p></details>}
       {matchedRoles.length > 0 && (
-        <div className="matched-roles"><strong>Совпавшие правила</strong><ul>
+        <details className="matched-roles"><summary>Совпавшие правила · {formatInteger(matchedRoles.length)}</summary><ul>
           {matchedRoles.map((match, index) => (
-            <li key={`${match?.role || 'role'}-${index}`}><span className="match-copy"><span>{match?.role || 'Роль'}</span>{match?.reason && <small>{match.reason}</small>}</span><span>{formatScore(match?.support)}</span></li>
+            <li key={`${match?.role || 'role'}-${index}`}><span className="match-copy"><RoleTag role={match?.role} />{match?.reason && <small>{match.reason}</small>}</span><span>Поддержка: {formatScore(match?.support)}</span></li>
           ))}
-        </ul></div>
+        </ul></details>
       )}
       {matchedRoles.length > 0 && matchedRoles.every((match) => !match?.reason) && <p className="reason-fallback">Для отдельных совпавших правил нет объяснений в этом отчёте. Роль не пересчитывается.</p>}
-      <dl className="node-metrics">
+      <details className="node-metrics-details"><summary>Объёмы и связи</summary><dl className="node-metrics">
         {metrics.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
-      </dl>
+      </dl></details>
+      {tiedNodes.length > 1 && <details className="priority-ties">
+        <summary>Одинаковый приоритет у {formatInteger(tiedNodes.length)} клиентов</summary>
+        <p>Сравнены сохранённые значения без округления. Ранг есть только у клиентов из топ-20.</p>
+        <ul className="priority-tie-list">
+          {tiedNodes.map((tiedNode) => (
+            <li key={tiedNode.gid}>
+              <button className="gid-action" type="button" aria-pressed={selectedGid === tiedNode.gid} onClick={() => onSelect(tiedNode.gid)}>{tiedNode.gid}</button>
+              <RoleTag role={tiedNode.role} />
+              <span>{topRankByGid.has(tiedNode.gid) ? 'Ранг ' + formatInteger(topRankByGid.get(tiedNode.gid)) : 'Вне топ-20'}</span>
+            </li>
+          ))}
+        </ul>
+      </details>}
       {warnings.length > 0 ? (
         <div className="warning-block"><strong>Ограничения и предупреждения</strong><ul>{warnings.map((warning, index) => <li key={`${warning?.code || warning}-${index}`}>{warningText(warning)}</li>)}</ul></div>
       ) : <p className="no-warning">Для клиента нет отдельных предупреждений. Общие ограничения отчёта остаются в силе.</p>}
@@ -229,7 +250,7 @@ function ClusterList({ clusters, nodes, onSelect }) {
   return (
     <section className="panel cluster-panel" aria-labelledby="cluster-title">
       <div className="panel-head"><div><p className="eyebrow">Группы связей</p><h2 id="cluster-title">Кластеры</h2></div><span className="count-pill">{clusters.length}</span></div>
-      <div className="cluster-list">
+      <details className="cluster-browser"><summary>Показать список кластеров</summary><div className="cluster-list">
         {clusters.map((cluster, index) => {
           const key = String(cluster.cluster_id ?? `unknown-${index}`);
           const members = nodes.filter((node) => String(node.cluster_id) === String(cluster.cluster_id));
@@ -250,7 +271,7 @@ function ClusterList({ clusters, nodes, onSelect }) {
             </details>
           );
         })}
-      </div>
+      </div></details>
     </section>
   );
 }
@@ -276,6 +297,8 @@ export default function App() {
   const [loadError, setLoadError] = useState('');
   const [retryKey, setRetryKey] = useState(0);
   const [selectedGid, setSelectedGid] = useState(null);
+  const [searchDraft, setSearchDraft] = useState('');
+  const [searchMessage, setSearchMessage] = useState('');
   const [filters, setFilters] = useState({ role: 'all', roleMode: 'primary', cluster: 'all', seedMode: 'all', graphScope: 'neighborhood', colorMode: 'role' });
   const nodeIndex = useMemo(() => new Map((report?.nodes || []).map((node) => [node.gid, node])), [report]);
   const topRankByGid = useMemo(() => new Map((report?.top_nodes || []).map((item) => [item.gid, item.rank])), [report]);
@@ -289,6 +312,33 @@ export default function App() {
     () => report && selectedNode ? nodesWithExactPriority(report, selectedNode) : [],
     [report, selectedNode],
   );
+
+  function selectGid(gid) {
+    setSelectedGid(gid);
+    setSearchDraft(gid ?? '');
+    setSearchMessage('');
+  }
+
+  function selectAndReveal(gid) {
+    selectGid(gid);
+    window.requestAnimationFrame(() => {
+      const title = document.getElementById('detail-title');
+      title?.focus({ preventScroll: true });
+      title?.closest('.detail-panel')?.scrollIntoView({ block: 'start' });
+    });
+  }
+
+  function searchExact(event) {
+    event.preventDefault();
+    const gid = searchDraft.trim();
+    if (!gid || !nodeIndex.has(gid)) {
+      setSelectedGid(null);
+      setSearchMessage(gid ? 'Клиент с таким ID не найден. Выбор очищен.' : 'Введите полный ID клиента.');
+      return;
+    }
+    setSelectedGid(gid);
+    setSearchMessage('Клиент найден. Его карточка и связи обновлены.');
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -323,16 +373,24 @@ export default function App() {
         <section className="panel empty-report" role="status"><p className="eyebrow">Нет данных</p><h2>В этом выпуске нет клиентов</h2><p>Массив nodes пуст. Проверьте входные файлы и условия выгрузки.</p></section>
       ) : (
         <>
-          <GraphView report={report} selectedGid={selectedGid} onSelectGid={setSelectedGid} filters={filters} onFiltersChange={setFilters} />
-          <section className="content-grid">
-            <TopNodes topNodes={filteredTopNodes} nodeIndex={nodeIndex} selectedGid={selectedGid} onSelect={setSelectedGid} />
-            <NodeDetails node={selectedNode} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} tiedNodes={tiedNodes} topRankByGid={topRankByGid} selectedGid={selectedGid} onSelect={setSelectedGid} />
+          <section className="workspace-heading" aria-labelledby="workspace-title">
+            <div><p className="eyebrow">1 · Выберите клиента</p><h2 id="workspace-title">Приоритеты и основания</h2></div>
+            <form className="client-search" role="search" onSubmit={searchExact}>
+              <label htmlFor="client-search">Поиск по полному ID</label>
+              <div className="client-search-row"><input id="client-search" type="search" inputMode="numeric" autoComplete="off" spellCheck="false" value={searchDraft} onChange={(event) => setSearchDraft(event.target.value)} placeholder="Введите ID клиента" /><button className="button button-primary" type="submit">Найти</button></div>
+              <span className={searchMessage.includes('не найден') || searchMessage.includes('Введите') ? 'search-error' : 'search-success'} role={searchMessage.includes('не найден') || searchMessage.includes('Введите') ? 'alert' : 'status'}>{searchMessage || 'ID сравнивается как строка без округления.'}</span>
+            </form>
           </section>
+          <section className="content-grid">
+            <TopNodes topNodes={filteredTopNodes} allNodes={report.nodes} nodeIndex={nodeIndex} topRankByGid={topRankByGid} filters={filters} selectedGid={selectedGid} onSelect={selectAndReveal} />
+            <NodeDetails node={selectedNode} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} tiedNodes={tiedNodes} topRankByGid={topRankByGid} selectedGid={selectedGid} onSelect={selectAndReveal} />
+          </section>
+          <GraphView report={report} selectedGid={selectedGid} onSelectGid={selectGid} filters={filters} onFiltersChange={setFilters} />
         </>
       )}
 
       <section className="secondary-grid">
-        <ClusterList clusters={report.clusters} nodes={report.nodes} onSelect={setSelectedGid} />
+        <ClusterList clusters={report.clusters} nodes={report.nodes} onSelect={selectAndReveal} />
         <CsvLinks />
       </section>
       <footer className="page-footer"><span>schema_version {report.schema_version}</span><span>Сводки и оценки сформированы Python batch-процессом</span></footer>

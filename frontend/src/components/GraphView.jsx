@@ -142,8 +142,6 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
   const previousSelectedRef = useRef(undefined);
   const previousScopeSignatureRef = useRef(null);
   const stabilizationRef = useRef({ listener: null, timer: null });
-  const [searchDraft, setSearchDraft] = useState('');
-  const [searchState, setSearchState] = useState({ kind: 'idle', message: '' });
   const [edgePage, setEdgePage] = useState(0);
 
   onSelectRef.current = onSelectGid;
@@ -277,37 +275,21 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
 
   useEffect(() => setEdgePage(0), [graph.signature]);
 
-  function searchExact(event) {
-    event.preventDefault();
-    if (!searchDraft) {
-      onSelectGid(null);
-      setSearchState({ kind: 'idle', message: 'Выбор и карточка очищены.' });
-      return;
-    }
-    const node = graph.nodeIndex.get(searchDraft);
-    if (!node) {
-      setSearchState({ kind: 'error', message: 'Точный ID не найден. Предыдущий выбор сохранён.' });
-      return;
-    }
-    onSelectGid(node.gid);
-    setSearchState({ kind: 'success', message: 'Клиент найден по точному строковому ID.' });
-  }
-
   function resetFilters() {
     onFiltersChange({ role: 'all', roleMode: 'primary', cluster: 'all', seedMode: 'all', graphScope: 'neighborhood', colorMode: 'role' });
     const firstTop = report.top_nodes.find((item) => graph.nodeIndex.has(item.gid));
     onSelectGid(firstTop?.gid ?? report.nodes[0]?.gid ?? null);
-    setSearchDraft('');
-    setSearchState({ kind: 'idle', message: '' });
   }
 
   const filteredNodeCount = graph.filteredNodes.length;
   const selectedBoundary = graph.selectedNode?.boundary === true;
+  const activeFilterCount = Number(filters.role !== 'all') + Number(filters.roleMode !== 'primary')
+    + Number(filters.cluster !== 'all') + Number(filters.seedMode !== 'all') + Number(filters.colorMode !== 'role');
 
   return (
     <section className="panel graph-panel" aria-labelledby="graph-title">
       <div className="panel-head graph-heading">
-        <div><p className="eyebrow">Связи и поиск</p><h2 id="graph-title">Направленный граф</h2></div>
+        <div><p className="eyebrow">2 · Проверьте связи</p><h2 id="graph-title">Направленный граф</h2></div>
         <div className="graph-counters" aria-live="polite">
           <span><strong>{formatInteger(graph.visibleNodes.length)}</strong> узлов</span>
           <span><strong>{formatInteger(graph.visibleEdges.length)}</strong> направленных связей</span>
@@ -316,25 +298,13 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
       </div>
 
       <div className="graph-controls">
-        <form className="graph-search" onSubmit={searchExact} role="search">
-          <label htmlFor="graph-gid-search">Точный поиск по полному ID</label>
-          <div className="graph-search-row">
-            <input
-              id="graph-gid-search"
-              type="search"
-              inputMode="numeric"
-              autoComplete="off"
-              spellCheck="false"
-              value={searchDraft}
-              onChange={(event) => setSearchDraft(event.target.value)}
-              placeholder="Например, 9007199254740993"
-            />
-            <button className="button button-primary" type="submit">Найти</button>
-          </div>
-          <span className={'search-feedback search-' + searchState.kind} role={searchState.kind === 'error' ? 'alert' : 'status'}>{searchState.message || 'ID сравнивается как строка без округления.'}</span>
-        </form>
-
-        <div className="graph-filter-grid" aria-label="Фильтры графа">
+        <div className="graph-quick-actions" role="group" aria-label="Область графа">
+          <button className="button button-quiet" type="button" aria-pressed={filters.graphScope === 'neighborhood'} onClick={() => updateFilter(onFiltersChange, 'graphScope', 'neighborhood')}>Связи клиента</button>
+          <button className="button button-quiet" type="button" aria-pressed={filters.graphScope === 'full'} onClick={() => updateFilter(onFiltersChange, 'graphScope', 'full')}>Весь граф</button>
+        </div>
+        <details className="graph-advanced">
+          <summary>Фильтры и вид{activeFilterCount > 0 ? ` · ${activeFilterCount} выбрано` : ''}</summary>
+          <div className="graph-filter-grid" aria-label="Фильтры графа">
           <label>Роль
             <select value={filters.role} onChange={(event) => updateFilter(onFiltersChange, 'role', event.target.value)}>
               <option value="all">Все роли</option>
@@ -353,12 +323,6 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
               {clusterOptions.map(([key, value]) => <option key={key} value={key}>{key === NO_CLUSTER_FILTER ? 'Не указан' : 'Кластер ' + value}</option>)}
             </select>
           </label>
-          <label>Вид графа
-            <select value={filters.graphScope} onChange={(event) => updateFilter(onFiltersChange, 'graphScope', event.target.value)}>
-              <option value="neighborhood">Выбранный узел и 1 переход</option>
-              <option value="full">Полный граф по фильтрам</option>
-            </select>
-          </label>
           <label>Цвет узлов
             <select value={filters.colorMode} onChange={(event) => updateFilter(onFiltersChange, 'colorMode', event.target.value)}>
               <option value="role">По роли</option>
@@ -373,12 +337,13 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
             </select>
           </label>
           <button className="button button-quiet graph-reset" type="button" onClick={resetFilters}>Сбросить фильтры</button>
-        </div>
+          </div>
+        </details>
       </div>
 
       <div className="graph-statuses" aria-live="polite">
         {graph.selectionOutsideFilters && graph.selectedNode && (
-          <p className="graph-notice"><strong>Выбранный клиент скрыт фильтрами.</strong> Он оставлен на графе; сбросьте или измените фильтры, чтобы увидеть соответствующий контекст.</p>
+          <p className="graph-notice"><strong>Выбранный клиент не соответствует фильтрам.</strong> Он всё равно показан для контекста; измените фильтры, чтобы увидеть его соседей.</p>
         )}
         {selectedBoundary && <p className="graph-notice">Это граничный узел выгрузки: отсутствие исходящих связей за её пределами неизвестно.</p>}
         {filteredNodeCount === 0 && !graph.selectedNode && <p className="graph-empty" role="status">Фильтры не нашли узлов. Сбросьте фильтры или выберите другие значения.</p>}
@@ -394,15 +359,15 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
             <div className="legend-row">
               {filters.colorMode === 'role'
                 ? roles.map((role) => <span className="legend-key" key={role}><i style={{ backgroundColor: ROLE_COLORS[role] || '#687983' }} />{ROLE_LABELS[role] || role}</span>)
-                : <>
-                  {visibleClusters.map(([key, value]) => <span className="legend-key" key={key}><i style={{ backgroundColor: clusterColor(value) }} />{key === NO_CLUSTER_FILTER ? 'Кластер не указан' : 'Кластер ' + value}</span>)}
-                  {visibleClusters.length === 0 && <span className="legend-key">Нет узлов для легенды</span>}
-                </>}
+                : <span className="legend-key"><i style={{ backgroundColor: clusterColor(graph.selectedNode?.cluster_id) }} />Цвет показывает кластер; точный ID — в карточке</span>}
               <span className="legend-key"><i className="legend-shape legend-seed" />ромб — seed</span>
               <span className="legend-key"><i className="legend-shape legend-boundary" />контур — граница</span>
               <span className="legend-key"><i className="legend-shape legend-isolate" />треугольник — изолят</span>
               <span className="legend-key"><i className="legend-arrow">→</i>стрелка — направление</span>
             </div>
+            {filters.colorMode === 'cluster' && <details className="legend-clusters"><summary>Цвета кластеров ({visibleClusters.length})</summary><div className="legend-row">
+              {visibleClusters.map(([key, value]) => <span className="legend-key" key={key}><i style={{ backgroundColor: clusterColor(value) }} />{key === NO_CLUSTER_FILTER ? 'Кластер не указан' : 'Кластер ' + value}</span>)}
+            </div></details>}
             <span className="legend-scale">Толщина ребра — логарифмическая шкала по всему выпуску; точная сумма указана в подсказке и таблице.</span>
           </div>
         </div>
@@ -415,12 +380,15 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
               <span>Кластер: {graph.selectedNode.cluster_id ?? '—'}</span>
               <span>Входящие / исходящие связи: {formatInteger(graph.selectedNode.in_deg)} / {formatInteger(graph.selectedNode.out_deg)}</span>
               <span>Приоритет: {typeof graph.selectedNode.priority_score === 'number' ? graph.selectedNode.priority_score.toFixed(3) : '—'}</span>
+              <p className="graph-selection-reason">{graph.selectedNode.why || graph.selectedNode.evidence || 'Основание не приложено к этому выпуску.'}</p>
+              <a href="#detail-title">Открыть полную карточку ↑</a>
             </>
-          ) : <p className="muted">Введите полный ID или выберите узел на графе, в таблице либо в кластере.</p>}
+          ) : <p className="muted">Выберите клиента в списке выше или на графе.</p>}
         </aside>
       </div>
 
-      <section className="edge-table-section" aria-labelledby="edge-table-title">
+      <details className="edge-table-section">
+        <summary>Таблица направленных связей · {formatInteger(graph.visibleEdges.length)}</summary>
         <div className="edge-table-heading">
           <div><p className="eyebrow">Проверяемые связи</p><h3 id="edge-table-title">Направленные рёбра графа</h3></div>
           <div className="edge-pagination">
@@ -447,7 +415,7 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
             </table>
           </div>
         )}
-      </section>
+      </details>
     </section>
   );
 }
