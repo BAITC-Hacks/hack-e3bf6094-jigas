@@ -49,7 +49,7 @@
 | terminal: `days_after_last_in_min` | 2 | 1 (цель 1.6; floor; фактически -50%) | 43 (1.91%) | 47 | 47 | 20/20 (100%) | − —; + — | `59b215b3e27b3b9c` |
 | terminal: `days_after_last_in_min` | 2 | 3 (цель 2.4; ceil; фактически +50%) | 36 (1.60%) | 41 | 41 | 20/20 (100%) | − —; + — | `2e64111719c11918` |
 
-Изменения primary role по сценариям: 
+Изменения primary role по сценариям:
 - `coordinator.seed_reach_count_min:-20%`: coordinator +2, distributor -1, transit -1
 - `coordinator.seed_reach_count_min:+20%`: coordinator -15, distributor +10, consolidator +2, transit +1, peripheral +2
 - `coordinator.in_deg_min:-20%`: coordinator +3, distributor -1, peripheral -2
