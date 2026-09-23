@@ -6,7 +6,7 @@ Jigas помогает AML-аналитику разобраться в сети
 
 <img width="1512" height="827" alt="image" src="https://github.com/user-attachments/assets/c4875556-88f6-4c38-9e56-439e94b5d834" />
 
-<img width="1512" height="829" alt="image" src="https://github.com/user-attachments/assets/5c43d0a9-7f8f-4aa5-85bc-25115c65c686" />
+<img width="1512" height="827" alt="image" src="https://github.com/user-attachments/assets/d43bf1e5-e716-4844-80a9-cfa17113d38d" />
 
 
 ## Что делает решение
@@ -113,4 +113,4 @@ docker compose run --rm --user "$(id -u):$(id -g)" pipeline
 
 При росте до ~1 млн узлов потребуются порционная обработка, компактное хранение графа, приближённая betweenness и загрузка в браузер только выбранной окрестности. Это [план развития](docs/ARCHITECTURE.md), производительность такого масштаба не проверялась.
 
-Данные предоставлены организаторами и обезличены. Сторонние библиотеки и технологии перечислены выше; версии зафиксированы в lockfile и `requirements.txt`, Cytoscape.js распространяется по MIT. При разработке применялся OpenAI Codex. Подача проекта идёт через командный GitHub.
+Данные предоставлены организаторами и обезличены. Сторонние библиотеки и технологии перечислены выше; версии зафиксированы в lockfile и `requirements.txt`, Cytoscape.js распространяется по MIT. При разработке применялся OpenAI Codex. Код размещается в командном GitHub-репозитории; решение сдаётся отдельной кнопкой на платформе HackAlem AI.
