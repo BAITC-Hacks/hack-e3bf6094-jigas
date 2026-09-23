@@ -31,6 +31,10 @@ def stage_viewer(stage: Path) -> tuple[str, ...]:
     if not license_path.is_file():
         raise ValueError("vis-network license is missing")
     shutil.copy2(license_path, stage / "assets" / license_path.name)
+    cytoscape_license = root / "assets" / "cytoscape.LICENSE.txt"
+    if not cytoscape_license.is_file():
+        raise ValueError("Cytoscape.js license is missing")
+    shutil.copy2(cytoscape_license, stage / "assets" / cytoscape_license.name)
     return tuple(str(path.relative_to(stage)).replace("\\", "/") for path in sorted((stage / "assets").rglob("*")) if path.is_file())
 
 def render_report(report: dict, out_path: Path) -> None:

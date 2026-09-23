@@ -617,6 +617,9 @@ def test_release_json_compatibility(starter: Any) -> None:
         (asset_dir / "vis-network.LICENSE.txt").write_text(
             "Local dependency license fixture\n", encoding="utf-8",
         )
+        (asset_dir / "cytoscape.LICENSE.txt").write_text(
+            "Local Cytoscape.js license fixture\n", encoding="utf-8",
+        )
         (out_dir / "report.html").write_text(
             "<!doctype html><html><head><link rel='stylesheet' href='./assets/app.css'>"
             "</head><body><script type='module' src='./assets/app.js'></script></body></html>\n",
@@ -626,6 +629,7 @@ def test_release_json_compatibility(starter: Any) -> None:
         release_paths = [
             "nodes_roles.csv", "clusters.csv", "top_nodes.csv", "report.json", "report.html", "index.html",
             "assets/app.js", "assets/app.css", "assets/vis-network.LICENSE.txt",
+            "assets/cytoscape.LICENSE.txt",
         ]
         output_hashes = {
             name: hashlib.sha256((out_dir / name).read_bytes()).hexdigest()
@@ -1064,6 +1068,8 @@ def validate_release_assets(out_dir: Path, validation: dict[str, Any]) -> None:
     require(bool(asset_files), "release assets/ must contain built resources")
     require((asset_root / "vis-network.LICENSE.txt").is_file(),
             "release is missing the local vis-network license")
+    require((asset_root / "cytoscape.LICENSE.txt").is_file(),
+            "release is missing the local Cytoscape.js license")
     javascript_files = [path for path in asset_files if path.suffix.lower() in {".js", ".mjs"}]
     require(bool(javascript_files), "release assets/ must contain the built JavaScript UI")
     javascript_bundle = "\n".join(path.read_text(encoding="utf-8") for path in javascript_files)
