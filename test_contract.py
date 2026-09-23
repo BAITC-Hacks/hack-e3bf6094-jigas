@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import csv
+import hashlib
 import io
 import json
 import math
@@ -20,8 +20,10 @@ import sys
 import tempfile
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from pathlib import Path
+from html.parser import HTMLParser
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable
+from urllib.parse import unquote, urlsplit
 
 import networkx as nx
 import pandas as pd
@@ -66,6 +68,37 @@ def frame_record(frame: pd.DataFrame, gid: int) -> dict[str, Any]:
     matches = frame.loc[frame["gid"].map(int) == gid]
     require(len(matches) == 1, f"gid={gid}: expected exactly one row, got {len(matches)}")
     return matches.iloc[0].to_dict()
+
+
+def reject_nonstandard_json(value: str) -> None:
+    raise ContractFailure(f"JSON contains non-standard numeric value {value}")
+
+
+def read_strict_json(path: Path) -> dict[str, Any]:
+    try:
+        with path.open("r", encoding="utf-8") as stream:
+            report = json.load(stream, parse_constant=reject_nonstandard_json)
+    except json.JSONDecodeError as exc:
+        raise ContractFailure(f"{path.name}: not valid JSON") from exc
+    require(isinstance(report, dict), f"{path.name}: JSON root must be an object")
+    return report
+
+
+class HtmlResourceParser(HTMLParser):
+    """Collect browser-fetched HTML resources for local release validation."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.references: list[tuple[str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        if tag.lower() == "script" and values.get("src"):
+            self.references.append(("script", str(values["src"])))
+        elif tag.lower() == "link" and values.get("href"):
+            self.references.append(("link", str(values["href"])))
+        elif tag.lower() in {"img", "source"} and values.get("src"):
+            self.references.append((tag.lower(), str(values["src"])))
 
 
 def make_sample() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -256,6 +289,30 @@ def test_graph_features_and_report(starter: Any) -> None:
     require(any(node.get("gid") == str(BIG_GID) for node in nodes_json),
             f"build_report must serialize gid={BIG_GID} as its exact decimal string")
     node_json_by_gid = {node["gid"]: node for node in nodes_json}
+    observed_node_fields = {"n_seed_payers", "sync_payers_max", "fanout_burst_max"}
+    require("daily_profiles_by_gid" not in report
+            and all(not (observed_node_fields & set(node)) for node in nodes_json),
+            "P0 build_report without observed inputs must omit all optional P1 fields")
+    try:
+        p0_payload = json.loads(json.dumps(report, ensure_ascii=False, allow_nan=False))
+    except (TypeError, ValueError) as exc:
+        raise ContractFailure("P0 report must be serializable as strict JSON") from exc
+    require(p0_payload["schema_version"] == "1.0"
+            and p0_payload["nodes"][0]["gid"] == str(min(map(int, nodes["gid"]))),
+            "P0 JSON compatibility fixture must preserve schema version and exact IDs")
+    for node in p0_payload["nodes"]:
+        for matched_role in node.get("matched_roles", []):
+            matched_role.pop("reason", None)
+    require(all("reason" not in matched_role
+                for node in p0_payload["nodes"]
+                for matched_role in node.get("matched_roles", [])),
+            "compatibility fixture must represent an older P0 report without role reasons")
+    validate_p1_daily_profiles(
+        p0_payload,
+        {node["gid"]: node for node in p0_payload["nodes"]},
+        nodes,
+        tx,
+    )  # Missing P1 fields/profile is a valid legacy P0 payload.
     require("boundary" in node_json_by_gid["40"].get("warnings", []),
             "gid=40: report should expose the depth boundary warning")
     require("isolated" in node_json_by_gid["80"].get("warnings", []),
@@ -287,7 +344,7 @@ def test_graph_features_and_report(starter: Any) -> None:
 
     with tempfile.TemporaryDirectory(prefix="jigas-contract-") as temp:
         out_dir = Path(temp)
-        starter.write_outputs(report, out_dir)
+        starter.write_outputs(p0_payload, out_dir)
         nodes_csv = pd.read_csv(out_dir / "nodes_roles.csv", dtype={"gid": "string"})
         top_csv = pd.read_csv(out_dir / "top_nodes.csv", dtype={"gid": "string"})
         require(str(BIG_GID) in set(nodes_csv["gid"].dropna()),
@@ -302,6 +359,221 @@ def test_graph_features_and_report(starter: Any) -> None:
             values = json.loads(cell)
             require(all(isinstance(gid, str) for gid in values),
                     "clusters.csv top_gids must be a JSON array of decimal strings")
+
+
+def test_observed_daily_profiles(starter: Any) -> None:
+    """Check HA-11.1 against independent transaction aggregation and P0 compatibility."""
+    try:
+        from hackalem.graph import enrich_observed_features
+    except ImportError:
+        print("SKIP: HA-11.1 is absent; P1 payload remains optional")
+        return
+
+    edges, nodes, tx = test_input_validation(starter)
+    edges = edges.copy()
+    tx = tx.copy()
+
+    # Two same-day rows from payer 2 count as two transactions but one counterparty;
+    # payer 10 on the same day establishes the distinct-payer count of two.
+    extra_rows = pd.DataFrame(
+        [
+            (2, 20, "2026-07-01", 5_000.00, 500_000),
+            (10, 20, "2026-07-01", 5_000.00, 500_000),
+        ],
+        columns=tx.columns,
+    )
+    extra_rows["date"] = pd.to_datetime(extra_rows["date"])
+    tx = pd.concat([tx, extra_rows], ignore_index=True)
+    for src in (2, 10):
+        edge_mask = (edges["src"] == src) & (edges["dst"] == 20)
+        require(int(edge_mask.sum()) == 1, f"fixture edge {src}->20 must be unique")
+        edges.loc[edge_mask, "sum_kzt"] += 5_000.00
+        edges.loc[edge_mask, "sum_tiyn"] += 500_000
+        edges.loc[edge_mask, "n_tx"] += 1
+
+    graph = starter.build_graph(edges, nodes)
+    basic = starter.basic_features(graph, nodes)
+    p0_features = starter.enrich_features(graph, basic, tx)
+    p1_features, daily_profiles = enrich_observed_features(graph, p0_features, tx)
+    require(set(daily_profiles) == {str(int(gid)) for gid in nodes["gid"]},
+            "daily profiles must contain every node, including isolates")
+
+    node_20 = frame_record(p1_features, 20)
+    require(int(node_20["n_seed_payers"]) == 2,
+            "gid=20: direct seed payers must count distinct immediate seed predecessors")
+    require(int(node_20["sync_payers_max"]) == 2,
+            "gid=20: same-day maximum must count distinct payers, not transaction rows")
+    expected_20 = [
+        {"date": "2026-07-01", "in_tiyn": 1_500_000, "out_tiyn": 0,
+         "in_tx": 3, "out_tx": 0, "n_payers": 2, "n_payees": 0},
+        {"date": "2026-07-02", "in_tiyn": 500_000, "out_tiyn": 600_000,
+         "in_tx": 1, "out_tx": 1, "n_payers": 1, "n_payees": 1},
+        {"date": "2026-07-03", "in_tiyn": 1_800_000, "out_tiyn": 0,
+         "in_tx": 1, "out_tx": 0, "n_payers": 1, "n_payees": 0},
+        {"date": "2026-07-04", "in_tiyn": 0, "out_tiyn": 600_000,
+         "in_tx": 0, "out_tx": 1, "n_payers": 0, "n_payees": 1},
+    ]
+    require(daily_profiles[str(20)] == expected_20,
+            "gid=20: daily sums/counts/unique counterparties must match the independent fixture")
+    require(int(node_20["fanout_burst_max"]) == 1,
+            "gid=20: fanout maximum must count unique same-day destinations")
+
+    boundary_profile = daily_profiles[str(40)]
+    require(boundary_profile == [
+        {"date": "2026-07-31", "in_tiyn": 900_000, "out_tiyn": 0,
+         "in_tx": 1, "out_tx": 0, "n_payers": 1, "n_payees": 0},
+    ], "gid=40: depth-4 profile must keep observed input and zero unobserved output")
+    for gid in (80, BIG_GID):
+        row = frame_record(p1_features, gid)
+        require(daily_profiles[str(gid)] == [], f"gid={gid}: isolate profile must be empty")
+        require(int(row["n_seed_payers"]) == 0
+                and int(row["sync_payers_max"]) == 0
+                and int(row["fanout_burst_max"]) == 0,
+                f"gid={gid}: absent observations must produce integer zero maxima")
+
+    # P1 context must not feed back into P0 role or priority calculations.
+    p0_roles, _ = starter.assign_roles(p0_features)
+    p0_priority, _ = starter.compute_priority(p0_roles)
+    p1_roles, _ = starter.assign_roles(p1_features)
+    p1_priority, _ = starter.compute_priority(p1_roles)
+    for gid in nodes["gid"].map(int):
+        before = frame_record(p0_priority, int(gid))
+        after = frame_record(p1_priority, int(gid))
+        for field in ("role", "role_score", "priority_score", "evidence", "why", "score_components"):
+            require(before[field] == after[field],
+                    f"gid={int(gid)}: P1 observed features changed baseline {field}")
+
+    cluster_map = starter.cluster_nodes(graph)
+    p1_priority = p1_priority.copy()
+    p1_priority["cluster_id"] = p1_priority["gid"].map(cluster_map)
+    summaries = starter.summarize_clusters(graph, p1_priority)
+    metadata = {
+        "period_start": "2026-07-01",
+        "period_end": "2026-07-31",
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+        "transaction_count": len(tx),
+        "sum_tiyn": int(tx["sum_tiyn"].sum()),
+        "sha256_files": {
+            "nodes.parquet": "0" * 64,
+            "edges.parquet": "1" * 64,
+            "transactions.parquet": "a" * 64,
+        },
+    }
+    report = starter.build_report(
+        p1_priority, edges, summaries, metadata=metadata, parameters={},
+        daily_profiles_by_gid=daily_profiles,
+    )
+    require("daily_profiles_by_gid" in report,
+            "P1 build_report must attach daily_profiles_by_gid")
+    report_20 = {node["gid"]: node for node in report["nodes"]}[str(20)]
+    require(report_20["n_seed_payers"] == 2 and report_20["sync_payers_max"] == 2,
+            "P1 report must serialize exact node-level observed features")
+    require(report["daily_profiles_by_gid"][str(20)] == expected_20,
+            "P1 report must retain the complete sorted daily profile")
+    json.dumps(report, allow_nan=False)
+    validate_p1_daily_profiles(
+        report,
+        {node["gid"]: node for node in report["nodes"]},
+        nodes,
+        tx,
+    )
+
+    bad_profiles = {
+        gid: [record.copy() for record in records]
+        for gid, records in daily_profiles.items()
+    }
+    bad_profiles[str(20)][0]["in_tiyn"] += 1
+    expect_value_error(
+        "P1 report rejects daily sums inconsistent with node totals",
+        lambda: starter.build_report(
+            p1_priority, edges, summaries, metadata=metadata, parameters={},
+            daily_profiles_by_gid=bad_profiles,
+        ),
+    )
+    expect_value_error(
+        "P1 report rejects node features without the matching daily profile",
+        lambda: starter.build_report(
+            p1_priority, edges, summaries, metadata=metadata, parameters={},
+        ),
+    )
+
+
+def test_release_json_compatibility(starter: Any) -> None:
+    """Exercise JSON/CSV/assets/manifest checks on a complete tiny P0 release."""
+    edges, nodes, tx = make_sample()
+    with tempfile.TemporaryDirectory(prefix="jigas-release-contract-") as temp:
+        root = Path(temp)
+        data_dir = root / "data"
+        out_dir = root / "out"
+        data_dir.mkdir()
+        out_dir.mkdir()
+        for name, frame in (
+            ("nodes", nodes), ("edges", edges), ("transactions", tx),
+        ):
+            frame.to_parquet(data_dir / f"{name}.parquet", index=False)
+        input_hashes = {
+            name: hashlib.sha256((data_dir / name).read_bytes()).hexdigest()
+            for name in ("nodes.parquet", "edges.parquet", "transactions.parquet")
+        }
+
+        without_stdout(starter.sanity_check, edges, nodes, tx)
+        graph = starter.build_graph(edges, nodes)
+        features = starter.enrich_features(graph, starter.basic_features(graph, nodes), tx)
+        roles, _role_parameters = starter.assign_roles(features)
+        priority, _priority_parameters = starter.compute_priority(roles)
+        priority = priority.copy()
+        priority["cluster_id"] = priority["gid"].map(starter.cluster_nodes(graph))
+        summaries = starter.summarize_clusters(graph, priority)
+        metadata = {
+            "period_start": "2026-07-01",
+            "period_end": "2026-07-31",
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+            "transaction_count": len(tx),
+            "sum_tiyn": int(edges["sum_tiyn"].sum()),
+            "sha256_files": input_hashes,
+        }
+        report = starter.build_report(
+            priority, edges, summaries, metadata=metadata, parameters={},
+        )
+        # Model an older report produced before HA-17.1 added reason strings.
+        for node in report["nodes"]:
+            for matched_role in node.get("matched_roles", []):
+                matched_role.pop("reason", None)
+        json_payload = json.dumps(report, ensure_ascii=False, allow_nan=False) + "\n"
+        starter.write_outputs(report, out_dir)
+        (out_dir / "report.json").write_text(json_payload, encoding="utf-8")
+        asset_dir = out_dir / "assets"
+        asset_dir.mkdir()
+        (asset_dir / "app.js").write_text("const reportPath = './report.json';\n", encoding="utf-8")
+        (asset_dir / "app.css").write_text("body { color: #111; }\n", encoding="utf-8")
+        (asset_dir / "vis-network.LICENSE.txt").write_text(
+            "Local dependency license fixture\n", encoding="utf-8",
+        )
+        (out_dir / "report.html").write_text(
+            "<!doctype html><html><head><link rel='stylesheet' href='./assets/app.css'>"
+            "</head><body><script type='module' src='./assets/app.js'></script></body></html>\n",
+            encoding="utf-8",
+        )
+        release_paths = [
+            "nodes_roles.csv", "clusters.csv", "top_nodes.csv", "report.json", "report.html",
+            "assets/app.js", "assets/app.css", "assets/vis-network.LICENSE.txt",
+        ]
+        output_hashes = {
+            name: hashlib.sha256((out_dir / name).read_bytes()).hexdigest()
+            for name in release_paths
+        }
+        validation = {
+            "status": "success",
+            "schema_version": "1.0",
+            "dataset": metadata,
+            "output_sha256": output_hashes,
+        }
+        (out_dir / "validation.json").write_text(
+            json.dumps(validation, ensure_ascii=False, allow_nan=False), encoding="utf-8",
+        )
+        validate_csv_release(data_dir, out_dir)
 
 
 def linear_quantile(values: list[float], q: float) -> float:
@@ -409,13 +681,316 @@ def test_roles_and_priority(starter: Any) -> None:
                 f"gid={row.gid}: why must identify numeric priority evidence")
 
 
+def exact_json_gid(value: Any, label: str) -> int:
+    require(isinstance(value, str) and re.fullmatch(r"-?\d+", value) is not None,
+            f"{label}: gid must be a decimal JSON string")
+    number = int(value)
+    require(str(number) == value, f"{label}: gid must use canonical decimal spelling")
+    return number
+
+
+def amount_to_tiyn(value: Any, label: str) -> int:
+    try:
+        scaled = float(value) * 100.0
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ContractFailure(f"{label}: amount is not numeric") from exc
+    require(math.isfinite(scaled), f"{label}: amount must be finite")
+    rounded = round(scaled)
+    require(abs(scaled - rounded) <= 1e-6,
+            f"{label}: amount is not exact to 0.01 KZT")
+    return int(rounded)
+
+
+def validate_p1_daily_profiles(
+    report: dict[str, Any],
+    nodes_by_gid: dict[str, dict[str, Any]],
+    nodes: pd.DataFrame,
+    tx: pd.DataFrame,
+) -> None:
+    observed_fields = {"n_seed_payers", "sync_payers_max", "fanout_burst_max"}
+    present_by_node = [observed_fields & set(node) for node in nodes_by_gid.values()]
+    has_daily_profiles = "daily_profiles_by_gid" in report
+    if not any(present_by_node) and not has_daily_profiles:
+        return  # A pre-HA-11 P0 payload remains a supported input.
+    require(all(fields == observed_fields for fields in present_by_node),
+            "report.json: optional observed node fields must be absent or present together")
+    require(has_daily_profiles,
+            "report.json: observed node fields require daily_profiles_by_gid")
+
+    profiles = report["daily_profiles_by_gid"]
+    require(isinstance(profiles, dict), "report.json: daily_profiles_by_gid must be an object")
+    require(set(profiles) == set(nodes_by_gid),
+            "report.json: daily_profiles_by_gid keys must match exact node gids")
+
+    # Independent aggregation from raw transaction rows, not from the report's
+    # edge/node aggregates. Duplicate rows increment transaction counts while
+    # payer/payee counts remain unique within each node-day.
+    calculated: dict[str, dict[str, dict[str, Any]]] = {
+        gid: {} for gid in nodes_by_gid
+    }
+    direct_seed_payers: dict[str, set[int]] = {gid: set() for gid in nodes_by_gid}
+    seed_ids = {int(row.gid) for row in nodes.itertuples(index=False) if bool(row.is_seed)}
+    for row in tx.itertuples(index=False):
+        src, dst = str(int(row.src)), str(int(row.dst))
+        day = pd.Timestamp(row.date).date().isoformat()
+        tiyn = amount_to_tiyn(row.sum_kzt, f"transaction {src}->{dst} on {day}")
+        source_day = calculated[src].setdefault(day, {
+            "date": day, "in_tiyn": 0, "out_tiyn": 0,
+            "in_tx": 0, "out_tx": 0, "n_payers": set(), "n_payees": set(),
+        })
+        destination_day = calculated[dst].setdefault(day, {
+            "date": day, "in_tiyn": 0, "out_tiyn": 0,
+            "in_tx": 0, "out_tx": 0, "n_payers": set(), "n_payees": set(),
+        })
+        source_day["out_tiyn"] += tiyn
+        source_day["out_tx"] += 1
+        source_day["n_payees"].add(int(row.dst))
+        destination_day["in_tiyn"] += tiyn
+        destination_day["in_tx"] += 1
+        destination_day["n_payers"].add(int(row.src))
+        if int(row.src) in seed_ids:
+            direct_seed_payers[dst].add(int(row.src))
+
+    for gid, node in nodes_by_gid.items():
+        records = profiles[gid]
+        require(isinstance(records, list),
+                f"gid={gid}: daily profile must be an array")
+        expected = []
+        for day in sorted(calculated[gid]):
+            bucket = calculated[gid][day]
+            expected.append({
+                "date": day,
+                "in_tiyn": bucket["in_tiyn"],
+                "out_tiyn": bucket["out_tiyn"],
+                "in_tx": bucket["in_tx"],
+                "out_tx": bucket["out_tx"],
+                "n_payers": len(bucket["n_payers"]),
+                "n_payees": len(bucket["n_payees"]),
+            })
+        require(records == expected,
+                f"gid={gid}: daily profile differs from independent transaction aggregation")
+        for field in ("n_seed_payers", "sync_payers_max", "fanout_burst_max"):
+            require(isinstance(node[field], int) and not isinstance(node[field], bool),
+                    f"gid={gid}: {field} must be an integer")
+        require(node["n_seed_payers"] == len(direct_seed_payers[gid]),
+                f"gid={gid}: n_seed_payers differs from raw seed predecessors")
+        require(node["sync_payers_max"] == max((row["n_payers"] for row in expected), default=0),
+                f"gid={gid}: sync_payers_max differs from daily profile")
+        require(node["fanout_burst_max"] == max((row["n_payees"] for row in expected), default=0),
+                f"gid={gid}: fanout_burst_max differs from daily profile")
+
+
+def validate_local_reference(reference: str, base_dir: Path, out_dir: Path, label: str) -> None:
+    parsed = urlsplit(reference)
+    require(not parsed.scheme and not parsed.netloc,
+            f"{label}: external resource is not allowed ({reference})")
+    path_text = unquote(parsed.path)
+    if not path_text:
+        return  # Fragment-only or query-only link.
+    relative = PurePosixPath(path_text)
+    require(not relative.is_absolute() and ".." not in relative.parts,
+            f"{label}: resource path must stay inside the release ({reference})")
+    resolved = (base_dir.joinpath(*relative.parts)).resolve()
+    release_root = out_dir.resolve()
+    require(resolved == release_root or release_root in resolved.parents,
+            f"{label}: resource path escapes the release ({reference})")
+    require(resolved.is_file() and resolved.stat().st_size > 0,
+            f"{label}: local resource is missing or empty ({reference})")
+
+
+def validate_release_assets(out_dir: Path, validation: dict[str, Any]) -> None:
+    html_path = out_dir / "report.html"
+    html = html_path.read_text(encoding="utf-8")
+    require("report-data" not in html and "__REPORT_DATA__" not in html,
+            "report.html must load the sibling report.json instead of embedding the payload")
+    parser = HtmlResourceParser()
+    parser.feed(html)
+    require(bool(parser.references), "report.html must reference locally built UI assets")
+    for tag, reference in parser.references:
+        validate_local_reference(reference, out_dir, out_dir, f"report.html {tag}")
+
+    asset_root = out_dir / "assets"
+    require(asset_root.is_dir(), "release is missing the built assets/ directory")
+    asset_files = sorted(path for path in asset_root.rglob("*") if path.is_file())
+    require(bool(asset_files), "release assets/ must contain built resources")
+    require((asset_root / "vis-network.LICENSE.txt").is_file(),
+            "release is missing the local vis-network license")
+    javascript_files = [path for path in asset_files if path.suffix.lower() in {".js", ".mjs"}]
+    require(bool(javascript_files), "release assets/ must contain the built JavaScript UI")
+    javascript_bundle = "\n".join(path.read_text(encoding="utf-8") for path in javascript_files)
+    require("report.json" in javascript_bundle.lower(),
+            "built JavaScript must request the sibling report.json")
+    expected_paths = {
+        "nodes_roles.csv", "clusters.csv", "top_nodes.csv", "report.json", "report.html",
+        *(path.relative_to(out_dir).as_posix() for path in asset_files),
+    }
+
+    # CSS may reference fonts/images as secondary local resources.
+    for css_path in (path for path in asset_files if path.suffix.lower() == ".css"):
+        css = css_path.read_text(encoding="utf-8")
+        for match in re.finditer(r"url\(\s*(['\"]?)(.*?)\1\s*\)", css, flags=re.IGNORECASE):
+            reference = match.group(2).strip()
+            if reference and not reference.lower().startswith("data:"):
+                validate_local_reference(reference, css_path.parent, out_dir, css_path.name)
+
+    manifest = validation.get("output_sha256")
+    require(isinstance(manifest, dict), "validation.json: output_sha256 must be an object")
+    require(set(manifest) == expected_paths,
+            "validation.json: output_sha256 must cover every release CSV, JSON, HTML and asset")
+    for relative_name, expected_hash in manifest.items():
+        relative = PurePosixPath(relative_name)
+        require(not relative.is_absolute() and ".." not in relative.parts
+                and "\\" not in relative_name,
+                f"validation.json: invalid release path {relative_name!r}")
+        artifact = out_dir.joinpath(*relative.parts)
+        require(artifact.is_file() and artifact.stat().st_size > 0,
+                f"validation.json: hashed artifact is missing or empty ({relative_name})")
+        require(isinstance(expected_hash, str) and re.fullmatch(r"[0-9a-f]{64}", expected_hash) is not None,
+                f"validation.json: invalid SHA-256 for {relative_name}")
+        digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        require(digest == expected_hash,
+                f"validation.json: SHA-256 mismatch for {relative_name}")
+
+
+def validate_report_release(
+    data_dir: Path,
+    out_dir: Path,
+    raw_nodes: pd.DataFrame,
+    raw_edges: pd.DataFrame,
+    raw_tx: pd.DataFrame,
+    nodes_csv: pd.DataFrame,
+    clusters_csv: pd.DataFrame,
+    top_csv: pd.DataFrame,
+    validation: dict[str, Any],
+) -> None:
+    report = read_strict_json(out_dir / "report.json")
+    require(report.get("schema_version") == "1.0", "report.json: schema_version must be 1.0")
+    dataset = report.get("dataset")
+    require(isinstance(dataset, dict), "report.json: dataset must be an object")
+    nodes = report.get("nodes")
+    edges = report.get("edges")
+    clusters = report.get("clusters")
+    top_nodes = report.get("top_nodes")
+    require(all(isinstance(value, list) for value in (nodes, edges, clusters, top_nodes)),
+            "report.json: nodes/edges/clusters/top_nodes must be arrays")
+    expected_gids = {str(int(gid)) for gid in raw_nodes["gid"]}
+    node_ids = [exact_json_gid(node.get("gid") if isinstance(node, dict) else None,
+                               f"report.json nodes[{index}]") for index, node in enumerate(nodes)]
+    require(len(node_ids) == len(set(node_ids)), "report.json: duplicate node gid")
+    require(node_ids == sorted(node_ids), "report.json: nodes must be sorted by numeric gid")
+    nodes_by_gid = {str(gid): node for gid, node in zip(node_ids, nodes)}
+    require(set(nodes_by_gid) == expected_gids,
+            "report.json: exact node gid set differs from nodes.parquet")
+    for field, expected in (
+        ("node_count", len(raw_nodes)), ("edge_count", len(raw_edges)),
+        ("transaction_count", len(raw_tx)),
+    ):
+        require(dataset.get(field) == expected,
+                f"report.json dataset.{field} differs from raw Parquet")
+    source_hashes = dataset.get("sha256_files")
+    require(isinstance(source_hashes, dict)
+            and set(source_hashes) == {"nodes.parquet", "edges.parquet", "transactions.parquet"},
+            "report.json dataset.sha256_files must name all three Parquet inputs")
+    for filename, expected_hash in source_hashes.items():
+        require(isinstance(expected_hash, str)
+                and re.fullmatch(r"[0-9a-f]{64}", expected_hash) is not None,
+                f"report.json dataset.sha256_files has an invalid digest for {filename}")
+        actual_hash = hashlib.sha256((data_dir / filename).read_bytes()).hexdigest()
+        require(actual_hash == expected_hash,
+                f"report.json dataset SHA-256 differs from input {filename}")
+    require(validation.get("dataset") == dataset,
+            "validation.json dataset must match report.json dataset")
+
+    csv_rows = {str(row.gid): row for row in nodes_csv.itertuples(index=False)}
+    for gid, node in nodes_by_gid.items():
+        csv_row = csv_rows[gid]
+        require(node.get("role") == str(csv_row.role),
+                f"gid={gid}: report role differs from nodes_roles.csv")
+        require(node.get("cluster_id") == int(csv_row.cluster_id),
+                f"gid={gid}: report cluster differs from nodes_roles.csv")
+        require(node.get("evidence") == str(csv_row.evidence),
+                f"gid={gid}: report evidence differs from nodes_roles.csv")
+        close(node.get("role_score"), float(csv_row.role_score),
+              f"gid={gid}: report role_score differs from nodes_roles.csv")
+        close(node.get("priority_score"), float(csv_row.priority_score),
+              f"gid={gid}: report priority_score differs from nodes_roles.csv")
+
+    expected_edges = {}
+    for row in raw_edges.itertuples(index=False):
+        src, dst = str(int(row.src)), str(int(row.dst))
+        expected_edges[(src, dst)] = (
+            amount_to_tiyn(row.sum_kzt, f"raw edge {src}->{dst}"), int(row.n_tx), int(row.depth)
+        )
+    actual_edges = {}
+    for index, edge in enumerate(edges):
+        require(isinstance(edge, dict), f"report.json edges[{index}] must be an object")
+        src = str(exact_json_gid(edge.get("src"), f"report.json edges[{index}].src"))
+        dst = str(exact_json_gid(edge.get("dst"), f"report.json edges[{index}].dst"))
+        key = (src, dst)
+        require(key not in actual_edges, f"report.json: duplicate edge {src}->{dst}")
+        require(src in nodes_by_gid and dst in nodes_by_gid,
+                f"report.json: edge {src}->{dst} has an unknown endpoint")
+        amount = edge.get("sum_tiyn")
+        count = edge.get("n_tx")
+        depth = edge.get("depth")
+        require(isinstance(amount, int) and not isinstance(amount, bool)
+                and isinstance(count, int) and not isinstance(count, bool)
+                and isinstance(depth, int) and not isinstance(depth, bool),
+                f"report.json: edge {src}->{dst} amount/count/depth must be integers")
+        actual_edges[key] = (amount, count, depth)
+    require(actual_edges == expected_edges,
+            "report.json edges differ from raw edges.parquet")
+    require(dataset.get("sum_tiyn") == sum(value[0] for value in expected_edges.values()),
+            "report.json dataset.sum_tiyn differs from raw edges.parquet")
+
+    cluster_rows = {int(row.cluster_id): row for row in clusters_csv.itertuples(index=False)}
+    report_clusters = {}
+    for index, cluster in enumerate(clusters):
+        require(isinstance(cluster, dict), f"report.json clusters[{index}] must be an object")
+        cid = cluster.get("cluster_id")
+        require(isinstance(cid, int) and not isinstance(cid, bool),
+                f"report.json clusters[{index}].cluster_id must be an integer")
+        require(cid not in report_clusters, f"report.json: duplicate cluster_id={cid}")
+        report_clusters[cid] = cluster
+    require(set(report_clusters) == set(cluster_rows),
+            "report.json clusters do not match clusters.csv IDs")
+    for cid, cluster in report_clusters.items():
+        csv_row = cluster_rows[cid]
+        for field in ("n_nodes", "n_seed"):
+            require(cluster.get(field) == int(getattr(csv_row, field)),
+                    f"cluster_id={cid}: report {field} differs from clusters.csv")
+        require(cluster.get("sum_kzt_internal") == str(csv_row.sum_kzt_internal),
+                f"cluster_id={cid}: report amount differs from clusters.csv")
+        require(cluster.get("top_gids") == json.loads(str(csv_row.top_gids)),
+                f"cluster_id={cid}: report top_gids differs from clusters.csv")
+        require(cluster.get("hypothesis") == str(csv_row.hypothesis),
+                f"cluster_id={cid}: report hypothesis differs from clusters.csv")
+
+    require(len(top_nodes) == len(top_csv),
+            "report.json top_nodes count differs from top_nodes.csv")
+    for index, (record, csv_row) in enumerate(zip(top_nodes, top_csv.itertuples(index=False))):
+        require(isinstance(record, dict), f"report.json top_nodes[{index}] must be an object")
+        gid = str(exact_json_gid(record.get("gid"), f"report.json top_nodes[{index}].gid"))
+        require(record.get("rank") == int(csv_row.rank) and gid == str(csv_row.gid),
+                f"report.json top_nodes[{index}] rank/gid differs from top_nodes.csv")
+        require(record.get("role") == str(csv_row.role) and record.get("why") == str(csv_row.why),
+                f"gid={gid}: report top role/why differs from top_nodes.csv")
+        close(record.get("priority_score"), float(csv_row.priority_score),
+              f"gid={gid}: report top priority differs from top_nodes.csv")
+
+    validate_p1_daily_profiles(report, nodes_by_gid, raw_nodes, raw_tx)
+    validate_release_assets(out_dir, validation)
+
+
 def validate_csv_release(data_dir: Path, out_dir: Path) -> None:
-    for filename in (*REQUIRED_COLUMNS, "report.html", "validation.json"):
+    for filename in (*REQUIRED_COLUMNS, "report.json", "report.html", "validation.json"):
         require((out_dir / filename).is_file(),
                 f"missing release artifact {out_dir / filename}")
 
     nodes = pd.read_parquet(data_dir / "nodes.parquet")
     edges = pd.read_parquet(data_dir / "edges.parquet")
+    tx = pd.read_parquet(data_dir / "transactions.parquet")
+    tx["date"] = pd.to_datetime(tx["date"])
     expected_gids = {str(int(gid)) for gid in nodes["gid"]}
     nodes_csv = pd.read_csv(out_dir / "nodes_roles.csv", dtype={"gid": "string"})
     clusters_csv = pd.read_csv(
@@ -521,24 +1096,13 @@ def validate_csv_release(data_dir: Path, out_dir: Path) -> None:
         close(row.priority_score, score_by_gid[gid], f"gid={gid} top priority differs from nodes_roles.csv")
         require(str(row.why).strip() != "", f"gid={gid}: top why must not be empty")
 
-    html = (out_dir / "report.html").read_text(encoding="utf-8")
-    for marker in ("__REPORT_DATA__", "__VIS_NETWORK_JS__", "__VIS_NETWORK_CSS__"):
-        require(marker not in html, f"report.html still contains template marker {marker}")
-    external_reference = re.search(
-        r"\b(?:src|href)\s*=\s*(['\"])(?:https?:)?//", html, flags=re.IGNORECASE
-    )
-    require(external_reference is None,
-            "report.html must not load scripts/styles from a remote host")
-
-    def reject_nonstandard_json(value: str) -> None:
-        raise ContractFailure(f"validation.json contains non-standard numeric value {value}")
-
-    try:
-        with (out_dir / "validation.json").open("r", encoding="utf-8") as stream:
-            validation = json.load(stream, parse_constant=reject_nonstandard_json)
-    except json.JSONDecodeError as exc:
-        raise ContractFailure("validation.json is not valid JSON") from exc
-    require(isinstance(validation, dict), "validation.json root must be an object")
+    validation = read_strict_json(out_dir / "validation.json")
+    require(validation.get("status") == "success",
+            "validation.json: release status must be success")
+    require(validation.get("schema_version") == "1.0",
+            "validation.json: schema_version must be 1.0")
+    validate_report_release(data_dir, out_dir, nodes, edges, tx,
+                            nodes_csv, clusters_csv, top_csv, validation)
 
 
 def main() -> int:
@@ -551,6 +1115,8 @@ def main() -> int:
         import starter
 
         test_graph_features_and_report(starter)
+        test_observed_daily_profiles(starter)
+        test_release_json_compatibility(starter)
         test_roles_and_priority(starter)
         validate_csv_release(args.data, args.out)
     except ContractFailure as exc:
@@ -560,7 +1126,7 @@ def main() -> int:
         print(f"FAIL: unexpected {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 
-    print("PASS: synthetic boundary graph, exact-ID export, and current release outputs")
+    print("PASS: synthetic P0/P1 graphs, exact-ID JSON/CSV/assets contract, and current release outputs")
     return 0
 
 
