@@ -604,6 +604,18 @@ def synthetic_role_rows() -> pd.DataFrame:
              0, 0.0, False, False, 10),
             (105, 1, False, 0, 0, 0, 0, 0, 0, math.nan,
              0, 0.0, False, True, math.nan),
+            # Primary distributor with no competing role.
+            (106, 1, False, 0, 10, 0, 1_000_000, 0, 10, math.nan,
+             0, 0.0, False, False, math.nan),
+            # Primary transit with a balanced, observed input/output pair.
+            (107, 2, False, 1, 1, 100_000, 100_000, 1, 1, 1.0,
+             0, 0.0, False, False, 0),
+            # Primary terminal; the boundary fixture above remains non-terminal.
+            (108, 2, False, 2, 0, 100_000, 0, 2, 0, 0.0,
+             0, 0.0, False, False, 3),
+            # Coordinator whose why selects M and H as the two leading terms.
+            (109, 1, False, 2, 2, 2, 1, 2, 2, 0.5,
+             2, 0.9, False, False, 0),
         ],
         columns=[
             "gid", "depth", "is_seed", "in_deg", "out_deg", "in_tiyn", "out_tiyn",
@@ -614,7 +626,7 @@ def synthetic_role_rows() -> pd.DataFrame:
 
 
 def test_roles_and_priority(starter: Any) -> None:
-    role_frame, _parameters = starter.assign_roles(synthetic_role_rows())
+    role_frame, role_parameters = starter.assign_roles(synthetic_role_rows())
     primary = frame_record(role_frame, 101)
     require(primary["role"] == "coordinator",
             f"gid=101: primary role precedence should select coordinator, got {primary['role']!r}")
@@ -646,8 +658,80 @@ def test_roles_and_priority(starter: Any) -> None:
     isolated = frame_record(role_frame, 105)
     require(isolated["role"] == "peripheral" and float(isolated["role_score"]) == 0.0,
             "gid=105: isolated node should be peripheral with zero role_score")
+    expected_primary = {
+        101: "coordinator", 102: "peripheral", 103: "consolidator",
+        104: "peripheral", 105: "peripheral",
+        106: "distributor", 107: "transit", 108: "terminal", 109: "coordinator",
+    }
+    for gid, expected_role in expected_primary.items():
+        row = frame_record(role_frame, gid)
+        require(row["role"] == expected_role,
+                f"gid={gid}: expected primary role {expected_role}, got {row['role']!r}")
+    require(set(role_frame["role"]) == ALLOWED_ROLES,
+            "synthetic role fixture must cover all six primary roles")
 
-    prioritized, _parameters = starter.compute_priority(role_frame)
+    has_ha17_explanations = role_parameters.get("explanation_version") == "1.0"
+    if has_ha17_explanations:
+        require(role_parameters.get("matched_role_fields") == ["role", "support", "reason"],
+                "role_parameters: HA-17.1 matched_role_fields must include reason")
+        positive_b = [float(value) for value in role_frame["betweenness"]
+                      if float(value) > 0]
+        q90 = linear_quantile(positive_b, 0.90)
+        close(role_parameters["coordinator"]["betweenness_threshold"], q90,
+              "role_parameters coordinator Q90")
+        ge = chr(0x2265)
+        in_set = chr(0x2208)
+        expected_reasons = {
+            (101, "coordinator"): [
+                f"S=2{ge}2", f"in_deg=3{ge}2", f"out_deg=10{ge}2",
+                "B=0.9>0", f"Q90={format(q90, '.8g')}",
+            ],
+            (101, "distributor"): [f"out_deg=10{ge}10"],
+            (101, "consolidator"): [f"in_deg=3{ge}3"],
+            (101, "transit"): [
+                "depth=1<4", "in_tiyn=1000000>0", "out_tiyn=1000000>0",
+                f"r=1{in_set}[0.8,1.2]",
+            ],
+            (103, "consolidator"): [f"in_deg=3{ge}3"],
+            (106, "distributor"): [f"out_deg=10{ge}10"],
+            (107, "transit"): [
+                "depth=2<4", "in_tiyn=100000>0", "out_tiyn=100000>0",
+                f"r=1{in_set}[0.8,1.2]",
+            ],
+            (108, "terminal"): [
+                "depth=2<4", "in_tiyn=100000>0", "out_deg=0", f"D=3{ge}2",
+            ],
+            (109, "coordinator"): [
+                f"S=2{ge}2", f"in_deg=2{ge}2", f"out_deg=2{ge}2",
+                "B=0.9>0", f"Q90={format(q90, '.8g')}",
+            ],
+        }
+        for row in role_frame.itertuples(index=False):
+            matches = row.matched_roles
+            require(isinstance(matches, list),
+                    f"gid={row.gid}: matched_roles must remain a list")
+            if row.role == "peripheral":
+                require(not matches, f"gid={row.gid}: peripheral must have no matched roles")
+                continue
+            primary_match = next(
+                (match for match in matches if match.get("role") == row.role), None
+            )
+            require(primary_match is not None,
+                    f"gid={row.gid}: primary role must appear in matched_roles")
+            for match in matches:
+                reason = match.get("reason")
+                require(isinstance(reason, str) and reason.strip() and re.search(r"\d", reason),
+                        f"gid={row.gid}: matched role reason must contain numeric facts")
+                fragments = expected_reasons.get((int(row.gid), match["role"]))
+                if fragments is not None:
+                    for fragment in fragments:
+                        require(fragment in reason,
+                                f"gid={row.gid} {match['role']} reason misses {fragment!r}")
+
+    prioritized, priority_parameters = starter.compute_priority(role_frame)
+    if has_ha17_explanations:
+        require(priority_parameters.get("explanation_version") == "1.0",
+                "priority_parameters: explanation_version must be 1.0")
     positive_volume = [
         (int(row.gid), (int(row.in_tiyn) + int(row.out_tiyn)) / 100.0)
         for row in role_frame.itertuples(index=False)
@@ -679,6 +763,40 @@ def test_roles_and_priority(starter: Any) -> None:
                 f"gid={row.gid}: evidence must be <=200 characters and include a numeric basis")
         require(why and re.search(r"\d", why),
                 f"gid={row.gid}: why must identify numeric priority evidence")
+        if has_ha17_explanations:
+            require("\u041e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u0435:" in why,
+                    f"gid={row.gid}: HA-17.1 why must state a limitation")
+
+    if has_ha17_explanations:
+        peripheral = frame_record(prioritized, 105)
+        peripheral_evidence = str(peripheral["evidence"]).casefold()
+        for fragment in (
+            "in_deg=0", "out_deg=0", "0.00",
+            "\u0440\u043e\u043b\u044c \u043d\u0435 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\u0430",
+            "\u0431\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u043e\u0441\u0442\u044c \u043d\u0435 \u043e\u0446\u0435\u043d\u0435\u043d\u0430",
+        ):
+            require(fragment in peripheral_evidence,
+                    f"gid=105: peripheral evidence misses {fragment!r}")
+
+        coordinator_why = str(frame_record(prioritized, 101)["why"])
+        for fragment in (
+            "max support distributor=0.675", "V=20000.00 KZT", "Q95(V>0)=",
+            "\u041e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u0435:",
+        ):
+            require(fragment in coordinator_why,
+                    f"gid=101: why misses max-support/volume/limitation detail {fragment!r}")
+        coordinator_why_lower = coordinator_why.casefold()
+        require("\u043e\u0441\u043d\u043e\u0432\u043d\u0430\u044f=coordinator" in coordinator_why_lower,
+                "gid=101: why must distinguish max-support role from primary role")
+
+        balanced = str(frame_record(prioritized, 109)["why"])
+        for fragment in ("max support coordinator=0.45", "B=0.9", "Q95(B>0)="):
+            require(fragment in balanced,
+                    f"gid=109: why misses role/B threshold detail {fragment!r}")
+
+        peripheral_why = str(peripheral["why"])
+        require(peripheral_why.index("M=") < peripheral_why.index("A="),
+                "gid=105: equal why contributions must retain M,A,C,H tie order")
 
 
 def exact_json_gid(value: Any, label: str) -> int:
@@ -881,6 +999,7 @@ def validate_report_release(
     nodes_by_gid = {str(gid): node for gid, node in zip(node_ids, nodes)}
     require(set(nodes_by_gid) == expected_gids,
             "report.json: exact node gid set differs from nodes.parquet")
+    validate_ha17_explanations(report, nodes_by_gid)
     for field, expected in (
         ("node_count", len(raw_nodes)), ("edge_count", len(raw_edges)),
         ("transaction_count", len(raw_tx)),
@@ -980,6 +1099,141 @@ def validate_report_release(
 
     validate_p1_daily_profiles(report, nodes_by_gid, raw_nodes, raw_tx)
     validate_release_assets(out_dir, validation)
+
+
+def validate_ha17_explanations(
+    report: dict[str, Any],
+    nodes_by_gid: dict[str, dict[str, Any]],
+) -> None:
+    """Require HA-17.1 details when versioned explanations are in the report."""
+    parameters = report.get("parameters", {})
+    require(isinstance(parameters, dict), "report.json parameters must be an object")
+    role_parameters = parameters.get("role_parameters", {})
+    priority_parameters = parameters.get("priority_parameters", {})
+    require(isinstance(role_parameters, dict),
+            "report.json parameters.role_parameters must be an object")
+    require(isinstance(priority_parameters, dict),
+            "report.json parameters.priority_parameters must be an object")
+
+    has_reason = any(
+        isinstance(match, dict) and "reason" in match
+        for node in nodes_by_gid.values()
+        for match in (
+            node.get("matched_roles")
+            if isinstance(node.get("matched_roles"), list) else []
+        )
+    )
+    role_version = role_parameters.get("explanation_version")
+    priority_version = priority_parameters.get("explanation_version")
+    if role_version is None and priority_version is None and not has_reason:
+        return  # Pre-HA-17 report payloads remain supported.
+
+    require(role_version == "1.0" and priority_version == "1.0",
+            "report.json HA-17.1 role/priority explanation versions must both be 1.0")
+    weights = priority_parameters.get("weights")
+    require(isinstance(weights, dict) and set(weights) == {"M", "A", "C", "H"},
+            "report.json priority weights must define M/A/C/H")
+    for component, weight in weights.items():
+        require(isinstance(weight, (int, float)) and not isinstance(weight, bool)
+                and math.isfinite(float(weight)),
+                f"report.json priority weight {component} must be finite")
+
+    def number_text(value: Any) -> str:
+        if value is None or (isinstance(value, float) and math.isnan(value)):
+            return "\u2014"
+        return format(float(value), ".8g")
+
+    for gid, node in nodes_by_gid.items():
+        matches = node.get("matched_roles")
+        require(isinstance(matches, list),
+                f"gid={gid}: matched_roles must be an array")
+        evidence = node.get("evidence")
+        require(isinstance(evidence, str) and evidence.strip()
+                and len(evidence) <= 200 and re.search(r"\d", evidence),
+                f"gid={gid}: HA-17.1 evidence must be numeric and <=200 characters")
+        if node.get("role") == "peripheral":
+            require(not matches, f"gid={gid}: peripheral cannot have matched roles")
+            continue
+
+        primary_matches = []
+        for position, match in enumerate(matches):
+            require(isinstance(match, dict),
+                    f"gid={gid}: matched_roles[{position}] must be an object")
+            role = match.get("role")
+            support = match.get("support")
+            reason = match.get("reason")
+            require(isinstance(role, str) and role.strip(),
+                    f"gid={gid}: matched_roles[{position}].role must not be empty")
+            require(isinstance(support, (int, float)) and not isinstance(support, bool)
+                    and math.isfinite(float(support)) and 0 <= float(support) <= 1,
+                    f"gid={gid}: matched_roles[{position}].support must be in [0, 1]")
+            require(isinstance(reason, str) and reason.strip() and re.search(r"\d", reason),
+                    f"gid={gid}: matched_roles[{position}].reason must contain numeric facts")
+            if role == node.get("role"):
+                primary_matches.append(match)
+        require(len(primary_matches) == 1,
+                f"gid={gid}: primary role must appear exactly once in matched_roles")
+        require(primary_matches[0]["reason"] in evidence,
+                f"gid={gid}: evidence must include the primary role's reason")
+
+    top_nodes = report.get("top_nodes")
+    require(isinstance(top_nodes, list), "report.json top_nodes must be an array")
+    for position, top_node in enumerate(top_nodes):
+        require(isinstance(top_node, dict),
+                f"report.json top_nodes[{position}] must be an object")
+        why = top_node.get("why")
+        require(isinstance(why, str) and why.strip() and re.search(r"\d", why)
+                and "\u041e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u0435:" in why,
+                f"report.json top_nodes[{position}].why must include numeric rationale and a limitation")
+        gid = str(exact_json_gid(top_node.get("gid"),
+                                 f"report.json top_nodes[{position}].gid"))
+        node = nodes_by_gid[gid]
+        components = node.get("score_components")
+        require(isinstance(components, dict) and set(components) == {"M", "A", "C", "H"},
+                f"gid={gid}: score_components must define M/A/C/H")
+        for component, value in components.items():
+            require(isinstance(value, (int, float)) and not isinstance(value, bool)
+                    and math.isfinite(float(value)) and 0 <= float(value) <= 1,
+                    f"gid={gid}: score component {component} must be finite in [0, 1]")
+        leading = sorted(
+            ((float(weights[key]) * float(components[key]), key)
+             for key in ("M", "A", "C", "H")),
+            key=lambda item: (-item[0], ("M", "A", "C", "H").index(item[1])),
+        )[:2]
+        top_priority = top_node.get("priority_score")
+        require(isinstance(top_priority, (int, float)) and not isinstance(top_priority, bool)
+                and math.isfinite(float(top_priority)),
+                f"gid={gid}: top priority must be finite")
+        require(f"P={float(top_priority):.6f}" in why,
+                f"gid={gid}: why must show the unaltered score to six decimals")
+        for _contribution, component in leading:
+            if component == "M":
+                matches = node["matched_roles"]
+                if matches:
+                    maximum = max(matches, key=lambda item: float(item["support"]))
+                    role_text = str(maximum["role"])
+                    support_text = number_text(maximum["support"])
+                    expected = f"max support {role_text}={support_text}"
+                    if role_text != node.get("role"):
+                        expected += f"; \u043e\u0441\u043d\u043e\u0432\u043d\u0430\u044f={node.get('role')}"
+                else:
+                    expected = "max support \u043d\u0435\u0442 \u0441\u043e\u0432\u043f\u0430\u0432\u0448\u0438\u0445 \u0440\u043e\u043b\u0435\u0439=0"
+            elif component == "A":
+                volume = (int(node["in_tiyn"]) + int(node["out_tiyn"])) / 100.0
+                q95 = number_text(priority_parameters.get("volume_q95_kzt"))
+                expected = f"V={volume:.2f} KZT"
+                require(f"Q95(V>0)={q95} KZT" in why,
+                        f"gid={gid}: why must name the volume threshold")
+            elif component == "C":
+                expected = f"S={int(node['seed_reach_count'])}/5"
+            else:
+                b_value = number_text(node.get("betweenness"))
+                q95 = number_text(priority_parameters.get("betweenness_q95_positive"))
+                expected = f"B={b_value}"
+                require(f"Q95(B>0)={q95}" in why,
+                        f"gid={gid}: why must name the betweenness threshold")
+            require(expected in why,
+                    f"gid={gid}: why does not explain leading component {component} with {expected!r}")
 
 
 def validate_csv_release(data_dir: Path, out_dir: Path) -> None:
