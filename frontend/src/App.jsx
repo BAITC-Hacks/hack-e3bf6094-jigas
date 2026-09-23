@@ -226,7 +226,31 @@ function CopyGidButton({ gid }) {
   return <button className="copy-button" type="button" onClick={copyGid} aria-label={`Скопировать полный ID ${gid}`}>{label}</button>;
 }
 
-function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, parameters, selectedGid, onSelect }) {
+function DailyProfile({ node, profile }) {
+  if (!Array.isArray(profile)) return <p className="daily-unavailable">Дневной профиль не включён в этот выпуск.</p>;
+  const maxAmount = Math.max(1, ...profile.flatMap((day) => [day.in_tiyn, day.out_tiyn]));
+  return <section className="daily-profile" aria-labelledby="daily-title">
+    <div className="daily-heading"><div><strong id="daily-title">Переводы по дням</strong><span>{profile.length ? `${formatInteger(profile.length)} дней с операциями` : 'Операций в выборке нет'}</span></div></div>
+    <dl className="daily-highlights">
+      <div><dt>Seed-плательщиков напрямую</dt><dd>{formatInteger(node.n_seed_payers)}</dd></div>
+      <div><dt>Плательщиков за день, максимум</dt><dd>{formatInteger(node.sync_payers_max)}</dd></div>
+      <div><dt>Получателей за день, максимум</dt><dd>{formatInteger(node.fanout_burst_max)}</dd></div>
+    </dl>
+    {profile.length > 0 && <>
+      <p className="daily-legend"><span className="daily-in-key" /> Входящие <span className="daily-out-key" /> Исходящие · общая шкала сумм</p>
+      <div className="daily-chart" aria-hidden="true">{profile.map((day) => <div className="daily-chart-row" key={day.date}>
+        <span>{day.date.slice(5)}</span><div className="daily-bar-track"><i className="daily-bar-in" style={{ width: `${day.in_tiyn / maxAmount * 100}%` }} /><i className="daily-bar-out" style={{ width: `${day.out_tiyn / maxAmount * 100}%` }} /></div>
+      </div>)}</div>
+      <details className="daily-data"><summary>Точные значения по дням</summary><div className="table-scroll"><table>
+        <thead><tr><th scope="col">Дата</th><th scope="col">Вход</th><th scope="col">Выход</th><th scope="col">Операции вход / выход</th><th scope="col">Контрагенты вход / выход</th></tr></thead>
+        <tbody>{profile.map((day) => <tr key={day.date}><th scope="row">{day.date}</th><td>{formatTiyn(day.in_tiyn)}</td><td>{formatTiyn(day.out_tiyn)}</td><td>{formatInteger(day.in_tx)} / {formatInteger(day.out_tx)}</td><td>{formatInteger(day.n_payers)} / {formatInteger(day.n_payees)}</td></tr>)}</tbody>
+      </table></div><p className="daily-note">Контрагенты считаются отдельно за каждый день: складывать их как число уникальных клиентов за весь период нельзя. Поступление и списание в один день не показывают порядок операций.</p></details>
+    </>}
+    {node.boundary === true && <p className="daily-note">У граничного клиента исходящие переводы могут быть неполными в этой выборке.</p>}
+  </section>;
+}
+
+function NodeDetails({ node, dailyProfile, topIndex, topItem, tiedNodes, topRankByGid, parameters, selectedGid, onSelect }) {
   if (!node) {
     return <section className="panel detail-panel" aria-labelledby="detail-title"><div className="empty-state"><strong id="detail-title">Выберите клиента</strong><span>Найдите точный ID или выберите клиента на графе, в топе или в кластере.</span></div></section>;
   }
@@ -271,6 +295,7 @@ function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, paramet
             : <p>Для этого клиента отдельный запрос не сформирован.</p>
           : <p>Запросы дополнительных данных не рассчитаны для этого выпуска.</p>}
       </div>
+      <DailyProfile node={node} profile={dailyProfile} />
       {warnings.length > 0 ? (
         <div className="warning-block"><strong>Ограничения для этого клиента</strong><ul>{warnings.map((warning, index) => <li key={`${warning?.code || warning}-${index}`}>{warningText(warning)}</li>)}</ul></div>
       ) : <p className="no-warning">Для клиента нет отдельных предупреждений. Общие ограничения отчёта остаются в силе.</p>}
@@ -471,7 +496,7 @@ export default function App() {
           <section className="analysis-workspace" aria-label="Рабочая область анализа">
             <TopNodes topNodes={filteredTopNodes} allNodes={report.nodes} boundaryGids={report.boundary_gids_by_inflow} nodeIndex={nodeIndex} topRankByGid={topRankByGid} parameters={report.parameters} filters={filters} selectedGid={selectedGid} onSelect={selectAndReveal} />
             <GraphView report={report} selectedGid={selectedGid} onSelectGid={selectFromGraph} filters={filters} onFiltersChange={setFilters} />
-            <NodeDetails node={selectedNode} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} tiedNodes={tiedNodes} topRankByGid={topRankByGid} parameters={report.parameters} selectedGid={selectedGid} onSelect={selectAndReveal} />
+            <NodeDetails node={selectedNode} dailyProfile={report.daily_profiles_by_gid?.[selectedGid]} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} tiedNodes={tiedNodes} topRankByGid={topRankByGid} parameters={report.parameters} selectedGid={selectedGid} onSelect={selectAndReveal} />
           </section>
         </>
       )}
