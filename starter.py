@@ -19,7 +19,9 @@
 """
 
 import argparse
+from collections import deque
 from pathlib import Path
+import time
 
 import numpy as np
 import pandas as pd
@@ -215,6 +217,62 @@ def basic_features(G: nx.DiGraph, nodes: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def enrich_features(G: nx.DiGraph, df: pd.DataFrame, tx: pd.DataFrame) -> pd.DataFrame:
+    """Add bounded seed reachability, exact betweenness, and inbound dates."""
+    graph_ids = set(G.nodes)
+    frame_ids = {int(gid) for gid in df["gid"]}
+    if frame_ids != graph_ids:
+        raise ValueError("feature rows must cover exactly the graph nodes")
+
+    bfs_started = time.perf_counter()
+    reach_count = {gid: 0 for gid in G.nodes}
+    seeds = [int(gid) for gid, is_seed in zip(df["gid"], df["is_seed"]) if bool(is_seed)]
+    for seed in seeds:
+        distances = {seed: 0}
+        queue = deque([seed])
+        while queue:
+            current = queue.popleft()
+            distance = distances[current]
+            if distance == 4:
+                continue
+            for neighbor in G.successors(current):
+                if neighbor not in distances:
+                    distances[neighbor] = distance + 1
+                    queue.append(neighbor)
+        for gid, distance in distances.items():
+            if gid != seed and 1 <= distance <= 4:
+                reach_count[gid] += 1
+    bfs_seconds = time.perf_counter() - bfs_started
+
+    betweenness_started = time.perf_counter()
+    betweenness = nx.betweenness_centrality(
+        G,
+        normalized=True,
+        endpoints=False,
+        weight=None,
+    )
+    betweenness_seconds = time.perf_counter() - betweenness_started
+
+    if "dst" not in tx.columns or "date" not in tx.columns:
+        raise ValueError("transactions must include dst and date to calculate last_in")
+    dates = pd.to_datetime(tx["date"], errors="coerce")
+    if dates.isna().any():
+        raise ValueError("transactions.date contains an invalid date")
+    incoming = pd.DataFrame({"gid": tx["dst"].to_numpy(), "last_in": dates.dt.normalize().to_numpy()})
+    last_in_by_gid = incoming.groupby("gid", sort=False)["last_in"].max()
+
+    enriched = df.copy()
+    enriched["seed_reach_count"] = enriched["gid"].map(reach_count).astype("int64")
+    enriched["betweenness"] = enriched["gid"].map(betweenness).astype("float64")
+    enriched["last_in"] = enriched["gid"].map(last_in_by_gid)
+    enriched["days_after_last_in"] = (
+        pd.Timestamp("2026-07-31") - enriched["last_in"]
+    ).dt.days.astype("Int64")
+
+    print(f"Feature timings: seed_bfs={bfs_seconds:.3f}s, exact_betweenness={betweenness_seconds:.3f}s")
+    return enriched
+
+
 # ---------------------------------------------------------------- выгрузки
 
 def write_outputs(df: pd.DataFrame, out_dir: Path):
@@ -282,6 +340,7 @@ def main():
         ap.error(str(exc))
     G = build_graph(edges, nodes)
     df = basic_features(G, nodes)
+    df = enrich_features(G, df, tx)
     write_outputs(df, Path(a.out))
     hints(G, df)
 
