@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import GraphView from './components/GraphView.jsx';
 import { formatInteger, formatPeriod, formatScore, formatTiyn, loadReport, warningText } from './report.js';
-import { filterTopNodes } from './graphModel.js';
+import { filterTopNodes, nodesWithExactPriority } from './graphModel.js';
 
 function LoadingView() {
   return (
@@ -127,8 +127,11 @@ function TopNodes({ topNodes, nodeIndex, selectedGid, onSelect }) {
 function RoleTag({ role }) {
   const labels = {
     seed: 'Seed',
+    coordinator: 'Координатор',
+    distributor: 'Распределитель',
     consolidator: 'Консолидатор',
     transit: 'Транзитный',
+    terminal: 'Кандидат в конечные',
     peripheral: 'Периферийный',
     isolated: 'Изолят',
   };
@@ -151,7 +154,7 @@ function CopyGidButton({ gid }) {
   return <button className="copy-button" type="button" onClick={copyGid} aria-label={`Скопировать полный ID ${gid}`}>{label}</button>;
 }
 
-function NodeDetails({ node, topIndex, topItem }) {
+function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, selectedGid, onSelect }) {
   if (!node) {
     return <section className="panel detail-panel" aria-labelledby="detail-title"><div className="empty-state"><strong id="detail-title">Выберите клиента</strong><span>Найдите точный ID или выберите клиента на графе, в топе или в кластере.</span></div></section>;
   }
@@ -179,6 +182,24 @@ function NodeDetails({ node, topIndex, topItem }) {
         <div><span>Приоритет</span><strong>{formatScore(node.priority_score)}</strong></div>
         <div><span>Оценка роли</span><strong>{formatScore(node.role_score)}</strong></div>
         <div><span>Кластер</span><strong>{node.cluster_id ?? '—'}</strong></div>
+      </div>
+      <div className="priority-ties">
+        <div className="priority-tie-heading"><strong>Узлы с точно равным приоритетом</strong><span>{formatInteger(tiedNodes.length)}</span></div>
+        <p>Сравнены сохранённые значения P без округления. Порядок сохранён из массива nodes.</p>
+        {tiedNodes.length > 0 && (
+          <details>
+            <summary>Показать все узлы ({formatInteger(tiedNodes.length)})</summary>
+            <ul className="priority-tie-list">
+              {tiedNodes.map((tiedNode) => (
+                <li key={tiedNode.gid}>
+                  <button className="gid-action" type="button" aria-pressed={selectedGid === tiedNode.gid} onClick={() => onSelect(tiedNode.gid)}>{tiedNode.gid}</button>
+                  <RoleTag role={tiedNode.role} />
+                  <span>{topRankByGid.has(tiedNode.gid) ? 'Ранг ' + formatInteger(topRankByGid.get(tiedNode.gid)) : 'Вне top-20'}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </div>
       <div className="priority-reason"><strong>Ведущие основания приоритета</strong><p>{topItem?.why || node.why || node.evidence || 'Подробная причина не приложена к этому отчёту.'}</p></div>
       {node.evidence && node.evidence !== (topItem?.why || node.why) && <p className="evidence-copy">{node.evidence}</p>}
@@ -255,13 +276,18 @@ export default function App() {
   const [loadError, setLoadError] = useState('');
   const [retryKey, setRetryKey] = useState(0);
   const [selectedGid, setSelectedGid] = useState(null);
-  const [filters, setFilters] = useState({ role: 'all', cluster: 'all', seedMode: 'all', graphScope: 'neighborhood', colorMode: 'role' });
+  const [filters, setFilters] = useState({ role: 'all', roleMode: 'primary', cluster: 'all', seedMode: 'all', graphScope: 'neighborhood', colorMode: 'role' });
   const nodeIndex = useMemo(() => new Map((report?.nodes || []).map((node) => [node.gid, node])), [report]);
   const topRankByGid = useMemo(() => new Map((report?.top_nodes || []).map((item) => [item.gid, item.rank])), [report]);
   const topItemByGid = useMemo(() => new Map((report?.top_nodes || []).map((item) => [item.gid, item])), [report]);
   const filteredTopNodes = useMemo(
     () => report ? filterTopNodes(report.top_nodes, nodeIndex, filters) : [],
     [report, nodeIndex, filters],
+  );
+  const selectedNode = typeof selectedGid === 'string' ? nodeIndex.get(selectedGid) : null;
+  const tiedNodes = useMemo(
+    () => report && selectedNode ? nodesWithExactPriority(report, selectedNode) : [],
+    [report, selectedNode],
   );
 
   useEffect(() => {
@@ -283,7 +309,6 @@ export default function App() {
   if (!report && !loadError) return <LoadingView />;
   if (!report) return <ErrorView message={loadError} onRetry={() => setRetryKey((value) => value + 1)} />;
 
-  const selectedNode = typeof selectedGid === 'string' ? nodeIndex.get(selectedGid) : null;
   const emptyReport = report.nodes.length === 0;
 
   return (
@@ -301,7 +326,7 @@ export default function App() {
           <GraphView report={report} selectedGid={selectedGid} onSelectGid={setSelectedGid} filters={filters} onFiltersChange={setFilters} />
           <section className="content-grid">
             <TopNodes topNodes={filteredTopNodes} nodeIndex={nodeIndex} selectedGid={selectedGid} onSelect={setSelectedGid} />
-            <NodeDetails node={selectedNode} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} />
+            <NodeDetails node={selectedNode} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} tiedNodes={tiedNodes} topRankByGid={topRankByGid} selectedGid={selectedGid} onSelect={setSelectedGid} />
           </section>
         </>
       )}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataSet, Network } from 'vis-network/standalone';
 import 'vis-network/styles/vis-network.css';
 import { formatInteger, formatTiyn } from '../report.js';
-import { buildGraphScope, NO_CLUSTER_FILTER } from '../graphModel.js';
+import { buildGraphScope, createEdgeWidthScale, NO_CLUSTER_FILTER } from '../graphModel.js';
 
 const ROLE_COLORS = {
   coordinator: '#a95c32',
@@ -79,7 +79,7 @@ function buildNodeItem(node, selectedGid, colorMode) {
   };
 }
 
-function buildEdgeItem(entry) {
+function buildEdgeItem(entry, edgeWidthScale) {
   const edge = entry.edge;
   const amount = typeof edge.sum_tiyn === 'number' ? formatTiyn(edge.sum_tiyn) : '—';
   const count = typeof edge.n_tx === 'number' ? formatInteger(edge.n_tx) : '—';
@@ -95,7 +95,7 @@ function buildEdgeItem(entry) {
     ]),
     arrows: { to: { enabled: true, scaleFactor: 0.72 } },
     color: { color: '#9aa9ad', highlight: '#287b72', hover: '#5477b5' },
-    width: 1.8,
+    width: edgeWidthScale(edge.sum_tiyn),
     selectionWidth: 1.2,
     smooth: { enabled: true, type: 'continuous', roundness: 0.12 },
   };
@@ -156,9 +156,10 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
     () => graph.visibleNodes.map((node) => buildNodeItem(node, selectedGid, filters.colorMode)),
     [graph.visibleNodes, selectedGid, filters.colorMode],
   );
+  const edgeWidthScale = useMemo(() => createEdgeWidthScale(report.edges), [report.edges]);
   const edgeRecords = useMemo(
-    () => graph.visibleEdges.map(buildEdgeItem),
-    [graph.visibleEdges],
+    () => graph.visibleEdges.map((entry) => buildEdgeItem(entry, edgeWidthScale)),
+    [graph.visibleEdges, edgeWidthScale],
   );
   const clusterOptions = useMemo(() => {
     const values = new Map();
@@ -174,7 +175,16 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
       return String(a[0]).localeCompare(String(b[0]), undefined, { numeric: true });
     });
   }, [report.nodes]);
-  const roles = useMemo(() => [...new Set(report.nodes.map((node) => node.role).filter((role) => typeof role === 'string' && role))].sort(), [report.nodes]);
+  const roles = useMemo(() => {
+    const values = new Set();
+    report.nodes.forEach((node) => {
+      if (typeof node.role === 'string' && node.role) values.add(node.role);
+      (Array.isArray(node.matched_roles) ? node.matched_roles : []).forEach((match) => {
+        if (typeof match?.role === 'string' && match.role) values.add(match.role);
+      });
+    });
+    return [...values].sort();
+  }, [report.nodes]);
   const visibleClusters = useMemo(() => {
     const values = new Map();
     graph.visibleNodes.forEach((node) => {
@@ -276,8 +286,7 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
     }
     const node = graph.nodeIndex.get(searchDraft);
     if (!node) {
-      onSelectGid(null);
-      setSearchState({ kind: 'error', message: 'Точный ID не найден. Текущая карточка очищена.' });
+      setSearchState({ kind: 'error', message: 'Точный ID не найден. Предыдущий выбор сохранён.' });
       return;
     }
     onSelectGid(node.gid);
@@ -285,7 +294,9 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
   }
 
   function resetFilters() {
-    onFiltersChange({ role: 'all', cluster: 'all', seedMode: 'all', graphScope: 'neighborhood', colorMode: 'role' });
+    onFiltersChange({ role: 'all', roleMode: 'primary', cluster: 'all', seedMode: 'all', graphScope: 'neighborhood', colorMode: 'role' });
+    const firstTop = report.top_nodes.find((item) => graph.nodeIndex.has(item.gid));
+    onSelectGid(firstTop?.gid ?? report.nodes[0]?.gid ?? null);
     setSearchDraft('');
     setSearchState({ kind: 'idle', message: '' });
   }
@@ -324,10 +335,16 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
         </form>
 
         <div className="graph-filter-grid" aria-label="Фильтры графа">
-          <label>Основная роль
+          <label>Роль
             <select value={filters.role} onChange={(event) => updateFilter(onFiltersChange, 'role', event.target.value)}>
               <option value="all">Все роли</option>
               {roles.map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}
+            </select>
+          </label>
+          <label>Режим роли
+            <select value={filters.roleMode} onChange={(event) => updateFilter(onFiltersChange, 'roleMode', event.target.value)}>
+              <option value="primary">Основная роль</option>
+              <option value="any">Любое совпавшее правило</option>
             </select>
           </label>
           <label>Кластер
@@ -386,6 +403,7 @@ export default function GraphView({ report, selectedGid, onSelectGid, filters, o
               <span className="legend-key"><i className="legend-shape legend-isolate" />треугольник — изолят</span>
               <span className="legend-key"><i className="legend-arrow">→</i>стрелка — направление</span>
             </div>
+            <span className="legend-scale">Толщина ребра — логарифмическая шкала по всему выпуску; точная сумма указана в подсказке и таблице.</span>
           </div>
         </div>
         <aside className="graph-selection" aria-label="Выбранный узел">

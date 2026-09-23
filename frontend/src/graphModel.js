@@ -2,7 +2,17 @@ export const NO_CLUSTER_FILTER = '__no_cluster__';
 
 export function matchesGraphFilters(node, filters) {
   if (!node) return false;
-  if (filters.role !== 'all' && node.role !== filters.role) return false;
+  if (filters.role !== 'all') {
+    if (filters.roleMode === 'any' && filters.role !== 'peripheral' && node.role !== 'peripheral') {
+      const matchedRoles = Array.isArray(node.matched_roles) ? node.matched_roles : [];
+      const matchesAnyRule = matchedRoles.some((match) => match?.role === filters.role);
+      // P0/older reports may not carry matched_roles; in that case only the
+      // stored primary role is available and remains a useful fallback.
+      if (matchedRoles.length > 0 ? !matchesAnyRule : node.role !== filters.role) return false;
+    } else if (node.role !== filters.role) {
+      return false;
+    }
+  }
   if (filters.cluster !== 'all') {
     const cluster = node.cluster_id === null || node.cluster_id === undefined
       ? NO_CLUSTER_FILTER
@@ -20,6 +30,32 @@ export function filterTopNodes(topNodes, nodeIndex, filters) {
     const node = nodeIndex.get(entry.gid);
     return node && matchesGraphFilters(node, filters);
   });
+}
+
+export function createEdgeWidthScale(edges) {
+  let minimum = Infinity;
+  let maximum = -Infinity;
+  edges.forEach((edge) => {
+    const amount = edge?.sum_tiyn;
+    if (typeof amount === 'number' && Number.isFinite(amount) && amount > 0) {
+      minimum = Math.min(minimum, amount);
+      maximum = Math.max(maximum, amount);
+    }
+  });
+  if (minimum === Infinity) return () => 1.25;
+  if (minimum === maximum) return (amount) => amount > 0 ? 2.875 : 1.25;
+
+  const logMinimum = Math.log1p(minimum);
+  const logRange = Math.log1p(maximum) - logMinimum;
+  return (amount) => {
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) return 1.25;
+    return 1.25 + 3.25 * (Math.log1p(amount) - logMinimum) / logRange;
+  };
+}
+
+export function nodesWithExactPriority(report, selected) {
+  if (!selected || typeof selected.priority_score !== 'number' || !Number.isFinite(selected.priority_score)) return [];
+  return report.nodes.filter((node) => node.priority_score === selected.priority_score);
 }
 
 export function buildGraphScope(report, selectedGid, filters) {
