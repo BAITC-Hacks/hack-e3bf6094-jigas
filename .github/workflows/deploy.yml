@@ -1,0 +1,69 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HACKALEM_CPUS: "2"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker compose build pipeline
+
+      - name: Prepare writable output directories
+        run: |
+          mkdir -p data out
+          sudo chown -R 10001:10001 data out
+
+      - name: Prepare input data
+        run: docker compose run --rm prepare
+
+      - name: Generate report
+        run: docker compose run --rm pipeline
+
+      - name: Validate generated report
+        run: docker compose run --rm --entrypoint python pipeline test_contract.py --data /app/data --out /app/out
+
+      - name: Set up Go for Brev CLI
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Deploy report to Brev
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          BREV_API_KEY: ${{ secrets.BREV_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$BREV_API_KEY" || { echo "Add the BREV_API_KEY repository secret" >&2; exit 1; }
+          go install github.com/brevdev/brev-cli@v0.6.335
+          export PATH="$(go env GOPATH)/bin:$PATH"
+
+          key="$RUNNER_TEMP/brev-deploy"
+          brev mint-cert \
+            --env sffvn5xhk \
+            --port nport-3Jj2brKSYF0D2lwNGtkBglac4WC \
+            --linux-user ubuntu \
+            --out-key "$key"
+
+          mkdir -m 700 -p "$HOME/.ssh"
+          printf '%s\n' '[global.prd.ga.run.brev.nvidia.com]:23803 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHYK0bvgG1WrYnjSogvlfz33KFQ0+c6EgpJjDnHlfYLl' > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          tar -czf "$RUNNER_TEMP/report.tgz" -C out .
+          scp -i "$key" -P 23803 -o CertificateFile="$key-cert.pub" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes "$RUNNER_TEMP/report.tgz" ubuntu@global.prd.ga.run.brev.nvidia.com:/tmp/jigas-report.tgz
+          ssh -i "$key" -p 23803 -o CertificateFile="$key-cert.pub" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes ubuntu@global.prd.ga.run.brev.nvidia.com \
+            'sudo mkdir -p /home/ubuntu/jigas-demo/out && sudo tar -xzf /tmp/jigas-report.tgz -C /home/ubuntu/jigas-demo/out --no-same-owner && sudo chown -R ubuntu:ubuntu /home/ubuntu/jigas-demo/out && rm -f /tmp/jigas-report.tgz'
