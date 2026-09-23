@@ -760,6 +760,36 @@ def build_report(
         raise ValueError(f"report nodes are missing columns: {', '.join(missing_nodes)}")
     if not isinstance(metadata, dict) or not isinstance(parameters, dict):
         raise ValueError("report metadata and parameters must be dictionaries")
+    required_metadata = {
+        "period_start", "period_end", "node_count", "edge_count",
+        "transaction_count", "sum_tiyn", "sha256_files",
+    }
+    missing_metadata = required_metadata - set(metadata)
+    if missing_metadata:
+        raise ValueError(f"report metadata is missing keys: {', '.join(sorted(missing_metadata))}")
+    for key in ("period_start", "period_end"):
+        value = metadata[key]
+        parsed = pd.to_datetime(value, errors="coerce") if isinstance(value, str) else pd.NaT
+        if pd.isna(parsed) or parsed.strftime("%Y-%m-%d") != value:
+            raise ValueError(f"dataset.{key} must be a YYYY-MM-DD date")
+    for key in ("node_count", "edge_count", "transaction_count", "sum_tiyn"):
+        amount = _exact_int(metadata[key], f"dataset.{key}")
+        if amount < 0:
+            raise ValueError(f"dataset.{key} cannot be negative")
+    expected_hashes = {"nodes.parquet", "edges.parquet", "transactions.parquet"}
+    hashes = metadata["sha256_files"]
+    if not isinstance(hashes, dict) or set(hashes) != expected_hashes:
+        raise ValueError("dataset.sha256_files must contain the three input parquet filenames")
+    for filename, digest in hashes.items():
+        if (
+            not isinstance(filename, str)
+            or "/" in filename
+            or "\\" in filename
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdefABCDEF" for character in digest)
+        ):
+            raise ValueError("dataset.sha256_files must map filenames without paths to SHA-256 hex digests")
     if df["gid"].isna().any() or df["gid"].duplicated().any():
         raise ValueError("report requires one row per exact gid")
 
@@ -881,16 +911,13 @@ def build_report(
     )
     if internal_tiyn + intercluster_tiyn != total_tiyn:
         raise ValueError("report cluster turnover does not reconcile to directed edges")
-    if (
-        "sum_tiyn" in metadata
-        and _exact_int(metadata["sum_tiyn"], "dataset.sum_tiyn") != total_tiyn
-    ):
+    if _exact_int(metadata["sum_tiyn"], "dataset.sum_tiyn") != total_tiyn:
         raise ValueError("dataset.sum_tiyn does not match report edges")
     for key, actual in (
         ("node_count", len(node_records)),
         ("edge_count", len(edge_records)),
     ):
-        if key in metadata and _exact_int(metadata[key], f"dataset.{key}") != actual:
+        if _exact_int(metadata[key], f"dataset.{key}") != actual:
             raise ValueError(f"dataset.{key} does not match report records")
 
     ranked = df.sort_values(
