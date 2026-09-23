@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import GraphView from './components/GraphView.jsx';
 import { formatInteger, formatPeriod, formatScore, formatTiyn, loadReport, warningText } from './report.js';
+import { filterTopNodes } from './graphModel.js';
 
 function LoadingView() {
   return (
@@ -88,7 +89,7 @@ function ReportOverview({ report }) {
 }
 
 function TopNodes({ topNodes, nodeIndex, selectedGid, onSelect }) {
-  const rows = topNodes.slice(0, 20).filter((item) => nodeIndex.has(item.gid));
+  const rows = topNodes;
   return (
     <section className="panel top-panel" aria-labelledby="top-title">
       <div className="panel-head">
@@ -96,15 +97,15 @@ function TopNodes({ topNodes, nodeIndex, selectedGid, onSelect }) {
         <span className="count-pill">{rows.length} строк</span>
       </div>
       {rows.length === 0 ? (
-        <div className="empty-state"><strong>Нет клиентов для списка</strong><span>В этом отчёте поле top_nodes пустое.</span></div>
+        <div className="empty-state"><strong>Нет клиентов для списка</strong><span>Проверьте фильтры: ни одна строка top_nodes им не соответствует.</span></div>
       ) : (
         <div className="table-scroll">
           <table>
             <thead><tr><th scope="col">Ранг</th><th scope="col">Клиент</th><th scope="col">Роль</th><th scope="col">Приоритет</th><th scope="col">Основание</th></tr></thead>
             <tbody>
-              {rows.map((item, index) => (
-                <tr key={`${item.gid}-${index}`} className={selectedGid === item.gid ? 'is-selected' : ''}>
-                  <td className="rank-cell">{formatInteger(item.rank ?? index + 1)}</td>
+              {rows.map((item) => (
+                <tr key={item.gid} className={selectedGid === item.gid ? 'is-selected' : ''}>
+                  <td className="rank-cell">{formatInteger(item.rank)}</td>
                   <td>
                     <button className="gid-action" type="button" aria-pressed={selectedGid === item.gid} onClick={() => onSelect(item.gid)}>{item.gid}</button>
                     <details className="mobile-reason"><summary>Основание</summary><p>{item.why || nodeIndex.get(item.gid)?.evidence || 'Подробная причина не приложена.'}</p></details>
@@ -152,7 +153,7 @@ function CopyGidButton({ gid }) {
 
 function NodeDetails({ node, topIndex, topItem }) {
   if (!node) {
-    return <section className="panel detail-panel" aria-labelledby="detail-title"><div className="empty-state"><strong id="detail-title">Выберите клиента</strong><span>Выберите строку в топе, чтобы открыть карточку.</span></div></section>;
+    return <section className="panel detail-panel" aria-labelledby="detail-title"><div className="empty-state"><strong id="detail-title">Выберите клиента</strong><span>Найдите точный ID или выберите клиента на графе, в топе или в кластере.</span></div></section>;
   }
 
   const metrics = [
@@ -254,10 +255,14 @@ export default function App() {
   const [loadError, setLoadError] = useState('');
   const [retryKey, setRetryKey] = useState(0);
   const [selectedGid, setSelectedGid] = useState(null);
-  const [filters, setFilters] = useState({ role: 'all', cluster: 'all', seedOnly: false, edgeMode: 'all', colorMode: 'role' });
+  const [filters, setFilters] = useState({ role: 'all', cluster: 'all', seedMode: 'all', graphScope: 'neighborhood', colorMode: 'role' });
   const nodeIndex = useMemo(() => new Map((report?.nodes || []).map((node) => [node.gid, node])), [report]);
   const topRankByGid = useMemo(() => new Map((report?.top_nodes || []).map((item) => [item.gid, item.rank])), [report]);
   const topItemByGid = useMemo(() => new Map((report?.top_nodes || []).map((item) => [item.gid, item])), [report]);
+  const filteredTopNodes = useMemo(
+    () => report ? filterTopNodes(report.top_nodes, nodeIndex, filters) : [],
+    [report, nodeIndex, filters],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -295,7 +300,7 @@ export default function App() {
         <>
           <GraphView report={report} selectedGid={selectedGid} onSelectGid={setSelectedGid} filters={filters} onFiltersChange={setFilters} />
           <section className="content-grid">
-            <TopNodes topNodes={report.top_nodes} nodeIndex={nodeIndex} selectedGid={selectedGid} onSelect={setSelectedGid} />
+            <TopNodes topNodes={filteredTopNodes} nodeIndex={nodeIndex} selectedGid={selectedGid} onSelect={setSelectedGid} />
             <NodeDetails node={selectedNode} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} />
           </section>
         </>
