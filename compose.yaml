@@ -1,0 +1,8 @@
+services:
+  pipeline:
+    build: .
+    image: jigas-graph-money:local
+    volumes:
+      - ./data:/app/data:ro
+      - ./out:/app/out
+    command: ["--data", "/app/data", "--out", "/app/out"]
