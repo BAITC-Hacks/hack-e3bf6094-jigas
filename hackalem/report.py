@@ -47,6 +47,9 @@ def build_report(
         "seed_reach_count", "betweenness", "last_in", "days_after_last_in",
         "matched_roles", "score_components", "why",
     ]
+    has_data_requests = "next_data_requests" in df.columns
+    if has_data_requests:
+        node_columns.append("next_data_requests")
     missing_nodes = [column for column in node_columns if column not in df.columns]
     if missing_nodes:
         raise ValueError(f"report nodes are missing columns: {', '.join(missing_nodes)}")
@@ -134,6 +137,15 @@ def build_report(
         node["gid"] = str(gid)
         node["cluster_id"] = cluster_id
         node["warnings"] = warnings
+        if has_data_requests:
+            items = node["next_data_requests"]
+            if not isinstance(items, list) or any(
+                not isinstance(item, dict)
+                or set(item) != {"reason_code", "text"}
+                or not all(isinstance(value, str) and value.strip() for value in item.values())
+                for item in items
+            ):
+                raise ValueError(f"nodes[{gid}].next_data_requests must contain reason_code/text pairs")
         for column in ("role_score", "priority_score"):
             score = node[column]
             if score is None or not np.isfinite(score) or not 0 <= score <= 1:
@@ -259,5 +271,10 @@ def build_report(
         "clusters": cluster_records,
         "top_nodes": top_records,
     }
+    if has_data_requests:
+        report["boundary_gids_by_inflow"] = [
+            str(int(gid)) for gid in df.loc[df["depth"].eq(4)]
+            .sort_values(["in_tiyn", "gid"], ascending=[False, True], kind="mergesort")["gid"]
+        ]
     json.dumps(report, ensure_ascii=False, allow_nan=False)
     return report

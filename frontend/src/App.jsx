@@ -124,20 +124,22 @@ function ReportOverview({ report }) {
   );
 }
 
-function TopNodes({ topNodes, allNodes, nodeIndex, topRankByGid, parameters, filters, selectedGid, onSelect }) {
+function TopNodes({ topNodes, allNodes, boundaryGids, nodeIndex, topRankByGid, parameters, filters, selectedGid, onSelect }) {
   const [mode, setMode] = useState('top');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
   const allMatches = useMemo(() => allNodes.filter((node) => matchesGraphFilters(node, filters)
     && node.gid.includes(query.trim())).sort((a, b) => (b.priority_score ?? -1) - (a.priority_score ?? -1)
       || a.gid.localeCompare(b.gid, undefined, { numeric: true })), [allNodes, filters, query]);
+  const boundaryMatches = (boundaryGids || []).map((gid) => nodeIndex.get(gid))
+    .filter((node) => node && node.gid.includes(query.trim()));
   useEffect(() => setPage(0), [mode, query, filters]);
   const rows = mode === 'top'
     ? topNodes
-    : allMatches.slice(page * CLIENTS_PAGE_SIZE, (page + 1) * CLIENTS_PAGE_SIZE).map((node) => ({
+    : (mode === 'frontier' ? boundaryMatches : allMatches).slice(page * CLIENTS_PAGE_SIZE, (page + 1) * CLIENTS_PAGE_SIZE).map((node) => ({
       ...node, rank: topRankByGid.get(node.gid) ?? null,
     }));
-  const total = mode === 'top' ? topNodes.length : allMatches.length;
+  const total = mode === 'top' ? topNodes.length : mode === 'frontier' ? boundaryMatches.length : allMatches.length;
   return (
     <section className="panel top-panel" aria-labelledby="top-title">
       <div className="panel-head">
@@ -148,8 +150,9 @@ function TopNodes({ topNodes, allNodes, nodeIndex, topRankByGid, parameters, fil
         <div className="list-tabs" role="group" aria-label="Показать клиентов">
           <button type="button" aria-pressed={mode === 'top'} onClick={() => setMode('top')}>Топ-20</button>
           <button type="button" aria-pressed={mode === 'all'} onClick={() => setMode('all')}>Все {formatInteger(allNodes.length)}</button>
+          {Array.isArray(boundaryGids) && <button type="button" aria-pressed={mode === 'frontier'} onClick={() => setMode('frontier')}>Запросить продолжение · {formatInteger(boundaryGids.length)}</button>}
         </div>
-        {mode === 'all' && <label className="table-search">Найти по части ID
+        {mode !== 'top' && <label className="table-search">Найти по части ID
           <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Введите цифры ID" />
         </label>}
       </div>
@@ -158,31 +161,33 @@ function TopNodes({ topNodes, allNodes, nodeIndex, topRankByGid, parameters, fil
       ) : (
         <div className="table-scroll">
           <table>
-            <thead><tr><th scope="col">Топ</th><th scope="col">Клиент</th><th scope="col">Роль</th><th scope="col">Приоритет</th></tr></thead>
+            <thead><tr><th scope="col">Топ</th><th scope="col">Клиент</th><th scope="col">Роль</th><th scope="col">{mode === 'frontier' ? 'Вход в выборке' : 'Приоритет'}</th></tr></thead>
             <tbody>
               {rows.map((item) => (
                 <tr key={item.gid} className={selectedGid === item.gid ? 'is-selected' : ''}>
                   <td className="rank-cell">{item.rank == null ? '—' : formatInteger(item.rank)}</td>
                   <td>
                     <button className="gid-action" type="button" aria-pressed={selectedGid === item.gid} onClick={() => onSelect(item.gid)}>{item.gid}</button>
-                    <details className="row-reason"><summary>Почему в списке</summary><ul>{(priorityFactors(nodeIndex.get(item.gid), parameters).length
+                    <details className="row-reason"><summary>{mode === 'frontier' ? 'Что запросить' : 'Почему в списке'}</summary><ul>{(mode === 'frontier'
+                      ? (item.next_data_requests || []).map((request) => request.text)
+                      : priorityFactors(nodeIndex.get(item.gid), parameters).length
                       ? priorityFactors(nodeIndex.get(item.gid), parameters).map((factor) => `${factor.label} — ${factor.detail}; вклад ${formatScore(factor.contribution)}.`)
                       : clientFacts(nodeIndex.get(item.gid)).slice(0, 2)).map((fact) => <li key={fact}>{fact}</li>)}</ul></details>
                   </td>
                   <td><RoleTag role={item.role} /></td>
-                  <td className="numeric-cell">{formatScore(item.priority_score)}</td>
+                  <td className="numeric-cell">{mode === 'frontier' ? formatTiyn(item.in_tiyn) : formatScore(item.priority_score)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      {mode === 'all' && total > CLIENTS_PAGE_SIZE && <div className="list-pagination">
+      {mode !== 'top' && total > CLIENTS_PAGE_SIZE && <div className="list-pagination">
         <span>{page * CLIENTS_PAGE_SIZE + 1}–{Math.min((page + 1) * CLIENTS_PAGE_SIZE, total)} из {formatInteger(total)}</span>
         <button className="button button-quiet" type="button" disabled={page === 0} onClick={() => setPage(page - 1)}>Назад</button>
         <button className="button button-quiet" type="button" disabled={(page + 1) * CLIENTS_PAGE_SIZE >= total} onClick={() => setPage(page + 1)}>Далее</button>
       </div>}
-      <p className="panel-footnote">Оценки рассчитаны Python. Ранг указан только для топ-20; полный список отсортирован по приоритету.</p>
+      <p className="panel-footnote">{mode === 'frontier' ? 'Все клиенты на глубине 4, по входящему объёму. Фильтры графа на этот список не влияют. Следующий исходящий слой не наблюдается; ранг указан только для глобального топ-20.' : 'Оценки рассчитаны Python. Ранг указан только для топ-20; полный список отсортирован по приоритету.'}</p>
     </section>
   );
 }
@@ -259,6 +264,13 @@ function NodeDetails({ node, topIndex, topItem, tiedNodes, topRankByGid, paramet
           : 'Состав факторов не приложен к этому отчёту. Доступные исходные данные — ниже.'}</p>}
       </div>
       <div className="observed-facts"><strong>Что видно в выборке</strong><ul>{clientFacts(node).map((fact) => <li key={fact}>{fact}</li>)}</ul></div>
+      <div className="observed-facts"><strong>Что запросить дальше</strong>
+        {Array.isArray(node.next_data_requests)
+          ? node.next_data_requests.length > 0
+            ? <ul>{node.next_data_requests.map((request) => <li key={request.reason_code}>{request.text}</li>)}</ul>
+            : <p>Для этого клиента отдельный запрос не сформирован.</p>
+          : <p>Запросы дополнительных данных не рассчитаны для этого выпуска.</p>}
+      </div>
       {warnings.length > 0 ? (
         <div className="warning-block"><strong>Ограничения для этого клиента</strong><ul>{warnings.map((warning, index) => <li key={`${warning?.code || warning}-${index}`}>{warningText(warning)}</li>)}</ul></div>
       ) : <p className="no-warning">Для клиента нет отдельных предупреждений. Общие ограничения отчёта остаются в силе.</p>}
@@ -457,7 +469,7 @@ export default function App() {
           </section>
           <nav className="workspace-nav" aria-label="Разделы анализа"><a href="#detail-title">Карточка</a><a href="#graph-title">Связи</a><a href="#top-title">Клиенты</a></nav>
           <section className="analysis-workspace" aria-label="Рабочая область анализа">
-            <TopNodes topNodes={filteredTopNodes} allNodes={report.nodes} nodeIndex={nodeIndex} topRankByGid={topRankByGid} parameters={report.parameters} filters={filters} selectedGid={selectedGid} onSelect={selectAndReveal} />
+            <TopNodes topNodes={filteredTopNodes} allNodes={report.nodes} boundaryGids={report.boundary_gids_by_inflow} nodeIndex={nodeIndex} topRankByGid={topRankByGid} parameters={report.parameters} filters={filters} selectedGid={selectedGid} onSelect={selectAndReveal} />
             <GraphView report={report} selectedGid={selectedGid} onSelectGid={selectFromGraph} filters={filters} onFiltersChange={setFilters} />
             <NodeDetails node={selectedNode} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} tiedNodes={tiedNodes} topRankByGid={topRankByGid} parameters={report.parameters} selectedGid={selectedGid} onSelect={selectAndReveal} />
           </section>
