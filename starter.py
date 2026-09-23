@@ -900,6 +900,9 @@ def build_report(
     total_tiyn = sum(edge["sum_tiyn"] for edge in edge_records)
     if total_tiyn > 2**53 - 1:
         raise ValueError("dataset turnover exceeds the safe JSON integer range")
+    transaction_count = sum(edge["n_tx"] for edge in edge_records)
+    if _exact_int(metadata["transaction_count"], "dataset.transaction_count") != transaction_count:
+        raise ValueError("dataset.transaction_count does not match aggregated edge counts")
     for edge in edge_records:
         if int(edge["src"]) not in cluster_by_gid or int(edge["dst"]) not in cluster_by_gid:
             raise ValueError("report edge endpoint is missing from report nodes")
