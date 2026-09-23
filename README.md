@@ -40,10 +40,9 @@ docker compose run --rm --entrypoint python pipeline test_contract.py --data /ap
 
 ### Ручной деплой на Brev
 
-Нужны Docker Compose v2 и [Brev CLI](https://docs.nvidia.com/brev/). В корне проекта введите ключ Brev скрытым вводом и запустите:
+Нужны Docker Compose v2 и [Brev CLI](https://docs.nvidia.com/brev/). На macOS скрипт берёт ключ из Keychain; в других системах задайте `BREV_API_KEY` в окружении. Запуск из корня проекта:
 
 ```bash
-read -s BREV_API_KEY; export BREV_API_KEY
 ./deploy.sh
 ```
 

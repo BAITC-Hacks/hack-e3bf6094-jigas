@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ -z "${BREV_API_KEY:-}" ]] && command -v security >/dev/null; then
+  BREV_API_KEY="$(security find-generic-password \
+    -a "${USER:-$(id -un)}" \
+    -s "hack-e3bf6094-jigas-brev-api-key" \
+    -w 2>/dev/null || true)"
+  export BREV_API_KEY
+fi
 if [[ -z "${BREV_API_KEY:-}" ]]; then
   echo "Set BREV_API_KEY before deploying." >&2
   exit 1
