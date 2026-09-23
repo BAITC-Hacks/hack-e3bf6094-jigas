@@ -59,6 +59,16 @@ docker compose run --rm pipeline
 docker compose run --rm --entrypoint python pipeline test_contract.py --data /app/data --out /app/out
 ```
 
+### Ручной деплой на Brev
+
+Нужны Docker Compose v2 и [Brev CLI](https://docs.nvidia.com/brev/). На macOS скрипт берёт ключ из Keychain; в других системах задайте `BREV_API_KEY` в окружении. Запуск из корня проекта:
+
+```bash
+./deploy.sh
+```
+
+Скрипт собирает и проверяет отчёт, затем отправляет его на VM. Веб-отчёт доступен по адресу https://8080-sffvn5xhk.gobrev.dev/report.html.
+
 ### Linux: bind-mounted каталоги
 
 Образ запускает приложение от UID 10001. Чтобы `prepare` и pipeline могли записывать в локальные bind mounts на обычном Linux, создайте `data/` и `out/` от имени текущего пользователя и запускайте сервисы с его UID/GID:
