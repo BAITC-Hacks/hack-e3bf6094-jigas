@@ -171,3 +171,75 @@ def summarize_clusters(G: nx.DiGraph, df: pd.DataFrame) -> pd.DataFrame:
     summary.attrs["sum_tiyn_internal_total"] = int(internal_total)
     summary.attrs["sum_tiyn_intercluster_total"] = int(intercluster_tiyn)
     return summary
+
+
+def summarize_structure(G: nx.DiGraph, df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Observed directed flows between Louvain communities and original-graph SCCs."""
+    required = {"gid", "cluster_id", "is_seed", "depth"}
+    if not required.issubset(df.columns):
+        raise ValueError(f"structure requires: {', '.join(sorted(required - set(df.columns)))}")
+    by_gid = {int(row.gid): row for row in df.itertuples(index=False)}
+    if len(by_gid) != len(df) or set(by_gid) != {int(gid) for gid in G.nodes}:
+        raise ValueError("structure requires one feature row per graph node")
+    cluster = {gid: int(row.cluster_id) for gid, row in by_gid.items()}
+    components = sorted((set(part) for part in nx.strongly_connected_components(G)), key=min)
+    scc_by_gid = {int(gid): sid for sid, part in enumerate(components) for gid in part}
+    scc_size = {sid: len(part) for sid, part in enumerate(components)}
+    result = df.copy()
+    result["n_payer_comms"] = result["gid"].map(lambda gid: len({cluster[int(src)] for src in G.predecessors(int(gid))})).astype("int64")
+    result["scc_id"] = result["gid"].map(scc_by_gid).astype("int64")
+    result["scc_size"] = result["scc_id"].map(scc_size).astype("int64")
+
+    flows: dict[tuple[int, int], dict] = {}
+    sccs = [{
+        "scc_id": sid, "n_nodes": len(part),
+        "n_seed": sum(bool(by_gid[int(gid)].is_seed) for gid in part),
+        "n_edges_internal": 0, "n_edges_incoming": 0, "n_edges_outgoing": 0,
+        "sum_tiyn_internal": 0, "sum_tiyn_incoming": 0, "sum_tiyn_outgoing": 0,
+        "n_external_recipients": 0, "origin_turnover_share": 0.0,
+    } for sid, part in enumerate(components)]
+    recipients = [set() for _ in components]
+    total = 0
+    boundary_sum = 0
+    for src, dst, data in G.edges(data=True):
+        src, dst = int(src), int(dst)
+        amount, count = int(data["sum_tiyn"]), int(data["n_tx"])
+        if amount <= 0 or count <= 0:
+            raise ValueError("structure edges require positive sum_tiyn and n_tx")
+        total += amount
+        if int(by_gid[dst].depth) == 4:
+            boundary_sum += amount
+        src_cluster, dst_cluster = cluster[src], cluster[dst]
+        if src_cluster != dst_cluster:
+            flow = flows.setdefault((src_cluster, dst_cluster), {
+                "src_cluster_id": src_cluster, "dst_cluster_id": dst_cluster,
+                "sum_tiyn": 0, "n_edges": 0, "n_tx": 0,
+            })
+            flow["sum_tiyn"] += amount
+            flow["n_edges"] += 1
+            flow["n_tx"] += count
+        src_scc, dst_scc = scc_by_gid[src], scc_by_gid[dst]
+        if src_scc == dst_scc:
+            sccs[src_scc]["n_edges_internal"] += 1
+            sccs[src_scc]["sum_tiyn_internal"] += amount
+        else:
+            sccs[src_scc]["n_edges_outgoing"] += 1
+            sccs[src_scc]["sum_tiyn_outgoing"] += amount
+            sccs[dst_scc]["n_edges_incoming"] += 1
+            sccs[dst_scc]["sum_tiyn_incoming"] += amount
+            recipients[src_scc].add(dst)
+    for sid, item in enumerate(sccs):
+        item["n_external_recipients"] = len(recipients[sid])
+        item["origin_turnover_share"] = (
+            (item["sum_tiyn_internal"] + item["sum_tiyn_outgoing"]) / total if total else 0.0
+        )
+    structure = {
+        "community_edges": [flows[key] for key in sorted(flows)],
+        "sccs": sccs,
+        "coverage": {
+            "boundary_n_nodes": sum(int(row.depth) == 4 for row in by_gid.values()),
+            "sum_tiyn_to_boundary": boundary_sum,
+            "share_to_boundary": boundary_sum / total if total else 0.0,
+        },
+    }
+    return result, structure

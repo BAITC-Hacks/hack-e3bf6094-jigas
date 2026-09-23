@@ -359,6 +359,9 @@ def test_graph_features_and_report(starter: Any) -> None:
     require("daily_profiles_by_gid" not in report
             and all(not (observed_node_fields & set(node)) for node in nodes_json),
             "P0 build_report without observed inputs must omit all optional P1 fields")
+    require(not ({"community_edges", "sccs", "coverage"} & set(report))
+            and all(not ({"n_payer_comms", "scc_id", "scc_size"} & set(node)) for node in nodes_json),
+            "P0 build_report without structure must omit all optional HA-13 fields")
     try:
         p0_payload = json.loads(json.dumps(report, ensure_ascii=False, allow_nan=False))
     except (TypeError, ValueError) as exc:
@@ -1029,6 +1032,96 @@ def validate_p1_data_requests(report: dict[str, Any], nodes_by_gid: dict[str, di
             request = items[expected.index("same_day_order")]
             require(first_same_day in request["text"],
                     f"gid={gid}: same-day request must name the first observed date")
+def validate_p1_structure(report: dict[str, Any], nodes_by_gid: dict[str, dict], edges: list[dict]) -> None:
+    fields = {"n_payer_comms", "scc_id", "scc_size"}
+    roots = {"community_edges", "sccs", "coverage"}
+    present = [fields & set(node) for node in nodes_by_gid.values()]
+    if not any(present) and not (roots & set(report)):
+        return  # Older P0/P1 releases remain valid.
+    require(all(item == fields for item in present) and roots <= set(report),
+            "report.json: structure node/root fields must be supplied together")
+    graph = nx.DiGraph()
+    graph.add_nodes_from(int(gid) for gid in nodes_by_gid)
+    graph.add_edges_from((int(edge["src"]), int(edge["dst"])) for edge in edges)
+    groups = sorted((set(part) for part in nx.strongly_connected_components(graph)), key=min)
+    scc_id = {gid: sid for sid, part in enumerate(groups) for gid in part}
+    cluster = {int(gid): node["cluster_id"] for gid, node in nodes_by_gid.items()}
+    for gid, node in nodes_by_gid.items():
+        number = int(gid)
+        require(node["scc_id"] == scc_id[number] and node["scc_size"] == len(groups[scc_id[number]]),
+                f"gid={gid}: SCC membership or size differs from directed graph")
+        require(node["n_payer_comms"] == len({cluster[src] for src in graph.predecessors(number)}),
+                f"gid={gid}: payer communities differ from direct predecessors")
+    totals = {}
+    scc_expected = [{
+        "scc_id": sid, "n_nodes": len(part),
+        "n_seed": sum(nodes_by_gid[str(gid)]["is_seed"] is True for gid in part),
+        "n_edges_internal": 0, "n_edges_incoming": 0, "n_edges_outgoing": 0,
+        "sum_tiyn_internal": 0, "sum_tiyn_incoming": 0, "sum_tiyn_outgoing": 0,
+    } for sid, part in enumerate(groups)]
+    recipients = [set() for _ in groups]
+    total = sum(edge["sum_tiyn"] for edge in edges)
+    boundary_sum = 0
+    for edge in edges:
+        src, dst, amount = int(edge["src"]), int(edge["dst"]), edge["sum_tiyn"]
+        if nodes_by_gid[str(dst)]["depth"] == 4:
+            boundary_sum += amount
+        if cluster[src] != cluster[dst]:
+            flow = totals.setdefault((cluster[src], cluster[dst]), [0, 0, 0])
+            flow[0] += amount
+            flow[1] += 1
+            flow[2] += edge["n_tx"]
+        a, b = scc_id[src], scc_id[dst]
+        if a == b:
+            scc_expected[a]["n_edges_internal"] += 1
+            scc_expected[a]["sum_tiyn_internal"] += amount
+        else:
+            scc_expected[a]["n_edges_outgoing"] += 1
+            scc_expected[a]["sum_tiyn_outgoing"] += amount
+            scc_expected[b]["n_edges_incoming"] += 1
+            scc_expected[b]["sum_tiyn_incoming"] += amount
+            recipients[a].add(dst)
+    expected_flows = [{"src_cluster_id": a, "dst_cluster_id": b, "sum_tiyn": value[0], "n_edges": value[1], "n_tx": value[2]}
+                      for (a, b), value in sorted(totals.items())]
+    require(report["community_edges"] == expected_flows,
+            "report.json: directed community flows differ from original edges")
+    require(sum(item["sum_tiyn_internal"] for item in report["clusters"])
+            + sum(item["sum_tiyn"] for item in expected_flows) == total,
+            "report.json: internal and intercommunity turnover do not reconcile")
+    require(len(report["sccs"]) == len(groups), "report.json: SCC list omits singleton nodes")
+    for sid, expected in enumerate(scc_expected):
+        actual = report["sccs"][sid]
+        require(all(actual.get(key) == value for key, value in expected.items()),
+                f"report.json: SCC {sid} counts or sums differ from original edges")
+        require(actual.get("n_external_recipients") == len(recipients[sid]),
+                f"report.json: SCC {sid} external recipients differ")
+        close(actual.get("origin_turnover_share"),
+              (expected["sum_tiyn_internal"] + expected["sum_tiyn_outgoing"]) / total if total else 0,
+              f"report.json: SCC {sid} origin turnover share differs")
+    coverage = report["coverage"]
+    require(coverage.get("boundary_n_nodes") == sum(node["depth"] == 4 for node in nodes_by_gid.values())
+            and coverage.get("sum_tiyn_to_boundary") == boundary_sum,
+            "report.json: boundary coverage differs from destination depth=4")
+    close(coverage.get("share_to_boundary"), boundary_sum / total if total else 0,
+          "report.json: boundary share differs")
+
+
+def test_structure_empty_graph() -> None:
+    from hackalem.clusters import summarize_structure
+    graph = nx.DiGraph()
+    graph.add_nodes_from([BIG_GID, 2])
+    frame = pd.DataFrame([
+        {"gid": BIG_GID, "cluster_id": 1, "is_seed": False, "depth": 4},
+        {"gid": 2, "cluster_id": 0, "is_seed": True, "depth": 0},
+    ])
+    enriched, structure = summarize_structure(graph, frame)
+    require(structure["community_edges"] == [] and len(structure["sccs"]) == 2,
+            "empty graph must preserve both singleton SCCs")
+    require(all(row["origin_turnover_share"] == 0 for row in structure["sccs"])
+            and structure["coverage"] == {"boundary_n_nodes": 1, "sum_tiyn_to_boundary": 0, "share_to_boundary": 0},
+            "empty graph shares must be zero while frontier membership remains")
+    require(enriched["n_payer_comms"].tolist() == [0, 0],
+            "empty graph has no incoming payer communities")
 
 
 def validate_local_reference(reference: str, base_dir: Path, out_dir: Path, label: str) -> None:
@@ -1307,6 +1400,7 @@ def validate_report_release(
     validate_p1_daily_profiles(report, nodes_by_gid, raw_nodes, raw_tx)
     validate_p1_temporal_routes(report, nodes_by_gid, raw_nodes, raw_tx)
     validate_p1_data_requests(report, nodes_by_gid)
+    validate_p1_structure(report, nodes_by_gid, edges)
     validate_release_assets(out_dir, validation)
 
 
@@ -1738,6 +1832,7 @@ def main() -> int:
         test_ha18_hypothesis_fixtures(starter)
         test_observed_daily_profiles(starter)
         test_temporal_routes()
+        test_structure_empty_graph()
         test_release_json_compatibility(starter)
         test_roles_and_priority(starter)
         validate_csv_release(args.data, args.out)

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import GraphView from './components/GraphView.jsx';
 import TemporalRoutes from './components/TemporalRoutes.jsx';
+import CommunityView from './components/CommunityView.jsx';
 import { formatInteger, formatPeriod, formatScore, formatTiyn, loadReport, ruleFacts, warningText } from './report.js';
 import { filterTopNodes, matchesGraphFilters, nodesWithExactPriority } from './graphModel.js';
 
@@ -410,6 +411,7 @@ export default function App() {
   const [searchDraft, setSearchDraft] = useState('');
   const [searchMessage, setSearchMessage] = useState('');
   const [filters, setFilters] = useState({ role: 'all', roleMode: 'primary', cluster: 'all', seedMode: 'all', graphScope: 'neighborhood', colorMode: 'role' });
+  const [sccFocusId, setSccFocusId] = useState(null);
   const nodeIndex = useMemo(() => new Map((report?.nodes || []).map((node) => [node.gid, node])), [report]);
   const topRankByGid = useMemo(() => new Map((report?.top_nodes || []).map((item) => [item.gid, item.rank])), [report]);
   const topItemByGid = useMemo(() => new Map((report?.top_nodes || []).map((item) => [item.gid, item])), [report]);
@@ -426,6 +428,7 @@ export default function App() {
   function selectGid(gid) {
     setSelectedGid(gid);
     setRouteMode(null);
+    setSccFocusId(null);
     setSearchDraft(gid ?? '');
     setSearchMessage('');
   }
@@ -445,9 +448,17 @@ export default function App() {
   }
 
   function showRoute(mode) {
+    setSccFocusId(null);
     setRouteMode(mode);
     setFilters((current) => ({ ...current, graphScope: 'full', role: 'all', cluster: 'all', seedMode: 'all' }));
     document.getElementById('graph-title')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  function focusScc(sccId) {
+    setRouteMode(null);
+    setSccFocusId(sccId);
+    setFilters((current) => ({ ...current, graphScope: 'full', role: 'all', cluster: 'all', seedMode: 'all' }));
+    window.requestAnimationFrame(() => document.getElementById('graph-title')?.scrollIntoView({ block: 'start' }));
   }
 
   function searchExact(event) {
@@ -466,6 +477,7 @@ export default function App() {
     const controller = new AbortController();
     setReport(null);
     setLoadError('');
+    setSccFocusId(null);
     loadReport(controller.signal)
       .then((loaded) => {
         setReport(loaded);
@@ -505,11 +517,13 @@ export default function App() {
           <nav className="workspace-nav" aria-label="Разделы анализа"><a href="#detail-title">Карточка</a><a href="#graph-title">Связи</a><a href="#top-title">Клиенты</a></nav>
           <section className="analysis-workspace" aria-label="Рабочая область анализа">
             <TopNodes topNodes={filteredTopNodes} allNodes={report.nodes} boundaryGids={report.boundary_gids_by_inflow} nodeIndex={nodeIndex} topRankByGid={topRankByGid} parameters={report.parameters} filters={filters} selectedGid={selectedGid} onSelect={selectAndReveal} />
-            <GraphView report={report} selectedGid={selectedGid} onSelectGid={selectFromGraph} filters={filters} onFiltersChange={setFilters} routeSteps={routeMode && report.seed_routes_by_gid?.[selectedGid]?.[routeMode]?.steps} />
+            <GraphView report={report} selectedGid={selectedGid} onSelectGid={selectFromGraph} filters={filters} onFiltersChange={setFilters} routeSteps={routeMode && report.seed_routes_by_gid?.[selectedGid]?.[routeMode]?.steps} sccFocusId={sccFocusId} onClearScc={() => setSccFocusId(null)} />
             <NodeDetails node={selectedNode} dailyProfile={report.daily_profiles_by_gid?.[selectedGid]} topIndex={selectedGid ? topRankByGid.get(selectedGid) : null} topItem={selectedGid ? topItemByGid.get(selectedGid) : null} tiedNodes={tiedNodes} topRankByGid={topRankByGid} parameters={report.parameters} selectedGid={selectedGid} onSelect={selectAndReveal} routes={report.seed_routes_by_gid} onShowRoute={showRoute} />
           </section>
         </>
       )}
+
+      {Array.isArray(report.community_edges) && Array.isArray(report.sccs) && report.coverage && <CommunityView report={report} onSelectGid={selectAndReveal} onFocusScc={focusScc} />}
 
       <section className="secondary-grid">
         <ClusterList clusters={report.clusters} nodes={report.nodes} onSelect={selectAndReveal} />
