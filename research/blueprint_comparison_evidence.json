@@ -1,0 +1,186 @@
+{
+  "scope": "Dataset and formula audit; no AML ground truth, no product benchmark.",
+  "environment": {
+    "python": "3.13.3",
+    "platform": "macOS-26.2-arm64-arm-64bit-Mach-O",
+    "pandas": "2.2.3",
+    "numpy": "2.2.6",
+    "networkx": "3.6.1",
+    "pyarrow": "25.0.1"
+  },
+  "sha256_parquet": {
+    "nodes": "d2a45b0df6e9352832d5fb09839d10b9e23f898156c3bab263b051b31cc0296d",
+    "edges": "4e71dde5cd3115bcb26e91202665532ee6581cf8233a9fc8059ea59fb7358a38",
+    "transactions": "c30c5317b5439591dde86f2058dc47a3d19b2900c055ded994fe547f6fb7e7da"
+  },
+  "dataset": {
+    "nodes": 2248,
+    "edges": 3119,
+    "transactions": 4840,
+    "seed": 81,
+    "isolates": 19,
+    "wcc": 35,
+    "total_kzt": 365890012.01,
+    "duplicate_transaction_rows": 97,
+    "all_ids_exceed_js_safe_integer": true,
+    "all_edge_depths_equal_src_depth_plus_one": true
+  },
+  "scc": {
+    "nodes": 85,
+    "seed": 2,
+    "internal": {
+      "edges": 242,
+      "kzt": 19453337.04
+    },
+    "leaving": {
+      "edges": 875,
+      "kzt": 90230006.09,
+      "unique_recipients": 642
+    },
+    "entering": {
+      "edges": 7,
+      "kzt": 705193.0
+    },
+    "all_scc_origin_kzt": 109683343.13,
+    "origin_share_of_edge_turnover": 0.29977135076046374
+  },
+  "frontier": {
+    "n": 444,
+    "no_recorded_outflow": 444,
+    "vlad_p_gate_eligible": 434,
+    "vlad_terminal_gate_eligible": 86,
+    "incoming_at_least_1m_kzt": 13,
+    "incoming_kzt": 56672164.68,
+    "incoming_share": 0.15488852611382875,
+    "edge_depth_4_kzt": 85819929.53,
+    "edge_depth_4_share": 0.2345511675996624,
+    "buckets": [
+      {
+        "bucket": "1",
+        "all_depths_1_to_3_p": 0.2865853658536585,
+        "depth_1_n": 312,
+        "depth_1_p": 0.1987179487179487,
+        "depth_2_n": 337,
+        "depth_2_p": 0.27299703264094954,
+        "depth_3_n": 663,
+        "depth_3_p": 0.334841628959276,
+        "depth_4_n": 434,
+        "depth_4_p": null
+      },
+      {
+        "bucket": "2",
+        "all_depths_1_to_3_p": 0.5701754385964912,
+        "depth_1_n": 85,
+        "depth_1_p": 0.5764705882352941,
+        "depth_2_n": 55,
+        "depth_2_p": 0.7272727272727273,
+        "depth_3_n": 88,
+        "depth_3_p": 0.4659090909090909,
+        "depth_4_n": 7,
+        "depth_4_p": null
+      },
+      {
+        "bucket": "3-4",
+        "all_depths_1_to_3_p": 0.7318840579710145,
+        "depth_1_n": 60,
+        "depth_1_p": 0.7166666666666667,
+        "depth_2_n": 45,
+        "depth_2_p": 0.8666666666666667,
+        "depth_3_n": 33,
+        "depth_3_p": 0.5757575757575758,
+        "depth_4_n": 3,
+        "depth_4_p": null
+      },
+      {
+        "bucket": "5+",
+        "all_depths_1_to_3_p": 0.8222222222222222,
+        "depth_1_n": 15,
+        "depth_1_p": 0.8666666666666667,
+        "depth_2_n": 25,
+        "depth_2_p": 0.88,
+        "depth_3_n": 5,
+        "depth_3_p": 0.4,
+        "depth_4_n": 0,
+        "depth_4_p": null
+      }
+    ]
+  },
+  "holdout_depth_3": {
+    "train_n": 934,
+    "holdout_n": 789,
+    "train_has_out_rate": 0.3854389721627409,
+    "holdout_has_out_rate": 0.35994930291508237,
+    "bucket_model_brier": 0.24104944863890954,
+    "crawl_replay_bucket_model_brier": 0.23445557874754186,
+    "constant_train_rate_brier": 0.23103552548438358,
+    "limitation": "Interior-depth diagnostic, not calibration on the unobserved fourth layer. Replay hides all depth-3 source edges before constructing incoming features."
+  },
+  "temporal": {
+    "nodes_with_both": 671,
+    "share_at_least_80pct": {
+      "naive": 193,
+      "strict": 47,
+      "same_day_assumed": 116
+    },
+    "naive_matched_exceeds_observed_inflow_nodes": 155,
+    "naive_fast_out_over_in_in_07_to_13": 92,
+    "definitions": {
+      "naive": "Existing eda2 timing co-occurrence, allows same-day and unlimited reuse of inflow.",
+      "strict": "Amount-conserving FIFO, 1-2 later calendar days.",
+      "same_day_assumed": "Amount-conserving FIFO, 0-2 calendar days assuming all same-day incoming precedes outgoing."
+    }
+  },
+  "role_formula_diagnostics": {
+    "vlad_transit_gate_upper_bound": 104,
+    "astra_activity_q95_kzt": 1451986.399999999,
+    "astra_activity_component_positive_quantiles": {
+      "0.1": 0.6637020036242256,
+      "0.5": 0.786797979276092,
+      "0.9": 0.9533064096159297
+    },
+    "examples": {
+      "100000005075949100": {
+        "depth": 4,
+        "in_deg": 1,
+        "out_deg": 0,
+        "in_tx": 7,
+        "seed_payers": 0,
+        "in_kzt": 2226000.0,
+        "out_kzt": 0.0,
+        "vlad_transit_gate": false,
+        "p_outflow_est": 0.2865853658536585,
+        "vlad_terminal_score": 0.7134146341463414
+      },
+      "100000008165763100": {
+        "depth": 1,
+        "in_deg": 15,
+        "out_deg": 17,
+        "in_tx": 26,
+        "seed_payers": 1,
+        "in_kzt": 1165815.0,
+        "out_kzt": 1267858.0,
+        "vlad_transit_gate": false
+      },
+      "100000003684369100": {
+        "depth": 0,
+        "in_deg": 24,
+        "out_deg": 62,
+        "in_tx": 58,
+        "seed_payers": 1,
+        "in_kzt": 3848436.0,
+        "out_kzt": 8588655.0,
+        "vlad_transit_gate": false
+      },
+      "100000005382566100": {
+        "depth": 0,
+        "in_deg": 7,
+        "out_deg": 1,
+        "in_tx": 11,
+        "seed_payers": 6,
+        "in_kzt": 393066.0,
+        "out_kzt": 50000.0,
+        "vlad_transit_gate": false
+      }
+    }
+  }
+}
