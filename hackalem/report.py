@@ -57,6 +57,9 @@ def build_report(
         "seed_reach_count", "betweenness", "last_in", "days_after_last_in",
         "matched_roles", "score_components", "why",
     ]
+    has_data_requests = "next_data_requests" in df.columns
+    if has_data_requests:
+        node_columns.append("next_data_requests")
     if has_observed_features:
         node_columns.extend(observed_feature_columns)
     if seed_routes_by_gid is not None:
@@ -154,6 +157,15 @@ def build_report(
             monthly = _exact_int(values["seed_reach_count"], f"nodes[{gid}].seed_reach_count")
             if not 0 <= strict <= same_day <= monthly:
                 raise ValueError(f"nodes[{gid}] temporal reach exceeds monthly reach")
+        if has_data_requests:
+            items = node["next_data_requests"]
+            if not isinstance(items, list) or any(
+                not isinstance(item, dict)
+                or set(item) != {"reason_code", "text"}
+                or not all(isinstance(value, str) and value.strip() for value in item.values())
+                for item in items
+            ):
+                raise ValueError(f"nodes[{gid}].next_data_requests must contain reason_code/text pairs")
         for column in ("role_score", "priority_score"):
             score = node[column]
             if score is None or not np.isfinite(score) or not 0 <= score <= 1:
@@ -355,6 +367,11 @@ def build_report(
         "clusters": cluster_records,
         "top_nodes": top_records,
     }
+    if has_data_requests:
+        report["boundary_gids_by_inflow"] = [
+            str(int(gid)) for gid in df.loc[df["depth"].eq(4)]
+            .sort_values(["in_tiyn", "gid"], ascending=[False, True], kind="mergesort")["gid"]
+        ]
     if normalized_daily_profiles is not None:
         report["daily_profiles_by_gid"] = normalized_daily_profiles
     if seed_routes_by_gid is not None:

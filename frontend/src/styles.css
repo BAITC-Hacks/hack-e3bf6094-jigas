@@ -161,6 +161,7 @@ tbody tr:hover, tbody tr.is-selected { background: #f2f7f6; }
 .observed-facts { padding: 12px 19px; border-top: 1px solid #edf1f2; }
 .observed-facts > strong { color: var(--navy); font-size: 13px; }
 .observed-facts ul { display: grid; gap: 5px; padding-left: 17px; margin: 7px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.observed-facts p { margin: 7px 0 0; color: var(--muted); font-size: 13px; }
 .daily-profile { padding: 13px 19px; border-top: 1px solid #edf1f2; }
 .daily-unavailable { padding: 12px 19px; margin: 0; border-top: 1px solid #edf1f2; color: var(--muted); font-size: 13px; }
 .daily-heading strong, .daily-heading span { display: block; }

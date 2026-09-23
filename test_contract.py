@@ -336,6 +336,25 @@ def test_graph_features_and_report(starter: Any) -> None:
     require(any(node.get("gid") == str(BIG_GID) for node in nodes_json),
             f"build_report must serialize gid={BIG_GID} as its exact decimal string")
     node_json_by_gid = {node["gid"]: node for node in nodes_json}
+    from hackalem.requests import build_data_requests
+    profiles = {str(int(gid)): [] for gid in nodes["gid"]}
+    profiles["20"] = [{"date": "2026-07-02", "in_tx": 1, "out_tx": 1}]
+    requested = build_data_requests(prioritized, profiles)
+    request_report = starter.build_report(requested, edges, summaries, metadata=metadata, parameters={})
+    request_nodes = {node["gid"]: node for node in request_report["nodes"]}
+    codes = lambda gid: [item["reason_code"] for item in request_nodes[gid]["next_data_requests"]]
+    require(codes("40") == ["boundary", "short_followup", "incomplete_balance"],
+            "gid=40: frontier/short-window/balance requests must be ordered")
+    require(codes("20") == ["incomplete_balance", "same_day_order"],
+            "gid=20: first same-day observation must trigger a timestamp request")
+    require("2026-07-02" in request_nodes["20"]["next_data_requests"][1]["text"],
+            "gid=20: request must name the observed same-day date")
+    require(codes("80") == ["isolated"] and codes(str(BIG_GID)) == ["isolated"],
+            "isolates, including large exact IDs, need a coverage request")
+    require(request_report["boundary_gids_by_inflow"] == ["40"],
+            "frontier index must contain all and only depth-4 nodes")
+    require(all(request_nodes[gid]["priority_score"] == node_json_by_gid[gid]["priority_score"]
+                for gid in request_nodes), "data requests must not alter priority scores")
     observed_node_fields = {"n_seed_payers", "sync_payers_max", "fanout_burst_max"}
     require("daily_profiles_by_gid" not in report
             and all(not (observed_node_fields & set(node)) for node in nodes_json),
@@ -965,6 +984,49 @@ def validate_p1_daily_profiles(
                 f"gid={gid}: fanout_burst_max differs from daily profile")
 
 
+def validate_p1_data_requests(report: dict[str, Any], nodes_by_gid: dict[str, dict[str, Any]]) -> None:
+    """Check the optional HA-14 release block without treating missing as zero."""
+    index = report.get("boundary_gids_by_inflow")
+    present = ["next_data_requests" in node for node in nodes_by_gid.values()]
+    if index is None and not any(present):
+        return
+    require(isinstance(index, list) and all(present),
+            "report.json: requests and frontier index must be present together")
+    profiles = report.get("daily_profiles_by_gid")
+    require(isinstance(profiles, dict), "report.json: data requests require daily profiles")
+    expected_index = sorted(
+        (gid for gid, node in nodes_by_gid.items() if node["depth"] == 4),
+        key=lambda gid: (-nodes_by_gid[gid]["in_tiyn"], int(gid)),
+    )
+    require(index == expected_index,
+            "report.json: frontier index must include all depth-4 nodes in exact inflow/gid order")
+    for gid, node in nodes_by_gid.items():
+        expected = []
+        if node["depth"] == 4:
+            expected.append("boundary")
+        if node["in_tiyn"] > 0 and node["out_deg"] == 0 and node["days_after_last_in"] is not None and node["days_after_last_in"] < 2:
+            expected.append("short_followup")
+        if node["in_tiyn"] > 0 or node["out_tiyn"] > 0:
+            expected.append("incomplete_balance")
+        first_same_day = next((day["date"] for day in profiles[gid]
+                               if day["in_tx"] > 0 and day["out_tx"] > 0), None)
+        if first_same_day:
+            expected.append("same_day_order")
+        if node["in_deg"] == node["out_deg"] == 0:
+            expected.append("isolated")
+        items = node["next_data_requests"]
+        require(isinstance(items, list), f"gid={gid}: next_data_requests must be an array")
+        require([item.get("reason_code") for item in items if isinstance(item, dict)] == expected
+                and len(items) == len(expected),
+                f"gid={gid}: data request conditions/order differ from observations")
+        require(all(isinstance(item.get("text"), str) and item["text"].strip() for item in items),
+                f"gid={gid}: data request text must be non-empty")
+        if first_same_day:
+            request = items[expected.index("same_day_order")]
+            require(first_same_day in request["text"],
+                    f"gid={gid}: same-day request must name the first observed date")
+
+
 def validate_local_reference(reference: str, base_dir: Path, out_dir: Path, label: str) -> None:
     parsed = urlsplit(reference)
     require(not parsed.scheme and not parsed.netloc,
@@ -1238,6 +1300,7 @@ def validate_report_release(
 
     validate_p1_daily_profiles(report, nodes_by_gid, raw_nodes, raw_tx)
     validate_p1_temporal_routes(report, nodes_by_gid, raw_nodes, raw_tx)
+    validate_p1_data_requests(report, nodes_by_gid)
     validate_release_assets(out_dir, validation)
 
 
