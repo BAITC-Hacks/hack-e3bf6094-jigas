@@ -11,13 +11,14 @@ def stage_viewer(stage: Path) -> tuple[str, ...]:
     build = root / "frontend" / "dist"
     page = build / "report.html"
     asset_dir = build / "assets"
-    if not page.is_file() or not asset_dir.is_dir():
+    if not page.is_file() or page.is_symlink() or not asset_dir.is_dir() or asset_dir.is_symlink():
         raise ValueError("frontend build is missing; run npm --prefix frontend run build")
     if page.stat().st_size == 0:
         raise ValueError("frontend build report.html is empty")
 
-    files = [path for path in sorted(asset_dir.rglob("*")) if path.is_file()]
-    if not files or any(path.is_symlink() or path.stat().st_size == 0 for path in files):
+    entries = sorted(asset_dir.rglob("*"))
+    files = [path for path in entries if path.is_file()]
+    if not files or any(path.is_symlink() for path in entries) or any(path.stat().st_size == 0 for path in files):
         raise ValueError("frontend build assets are missing or invalid")
     if (stage / "assets").exists():
         raise ValueError("release staging assets already exist")
