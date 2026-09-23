@@ -1111,6 +1111,14 @@ def validate_report_release(
         require(cluster.get("hypothesis") == str(csv_row.hypothesis),
                 f"cluster_id={cid}: report hypothesis differs from clusters.csv")
 
+    validate_ha18_cluster_hypotheses(
+        list(report_clusters.values()),
+        nodes_by_gid,
+        {gid: int(row.cluster_id) for gid, row in csv_rows.items()},
+        raw_nodes,
+        raw_edges,
+    )
+
     require(len(top_nodes) == len(top_csv),
             "report.json top_nodes count differs from top_nodes.csv")
     for index, (record, csv_row) in enumerate(zip(top_nodes, top_csv.itertuples(index=False))):
@@ -1125,6 +1133,163 @@ def validate_report_release(
 
     validate_p1_daily_profiles(report, nodes_by_gid, raw_nodes, raw_tx)
     validate_release_assets(out_dir, validation)
+
+
+HA18_LEADER_PREFIX = "Первый для проверки по P:"
+HA18_LEADER_RE = re.compile(
+    r"Первый для проверки по P: (?P<gid>-?\d+), роль (?P<role>[^;]+); "
+    r"(?P<in_degree>\d+) плательщиков, (?P<out_degree>\d+) получателей; "
+    r"вход (?P<in_amount>\d+\.\d{2}) KZT, выход (?P<out_amount>\d+\.\d{2}) KZT\."
+)
+
+
+def validate_ha18_cluster_hypotheses(
+    cluster_records: list[dict[str, Any]],
+    nodes_by_gid: dict[str, dict[str, Any]],
+    cluster_by_gid: dict[str, int],
+    raw_nodes: pd.DataFrame,
+    raw_edges: pd.DataFrame,
+) -> None:
+    """Independently verify HA-18 leader text and preserved cluster facts."""
+    seeds = {
+        str(int(row.gid)): bool(row.is_seed)
+        for row in raw_nodes.itertuples(index=False)
+    }
+    edges = [
+        (str(int(row.src)), str(int(row.dst)),
+         amount_to_tiyn(row.sum_kzt, f"raw edge {int(row.src)}->{int(row.dst)}"))
+        for row in raw_edges.itertuples(index=False)
+    ]
+    for record in cluster_records:
+        cid = int(record["cluster_id"])
+        members = {gid for gid, member_cid in cluster_by_gid.items() if member_cid == cid}
+        require(bool(members), f"cluster_id={cid}: HA-18 cluster has no node members")
+        expected_seeds = sum(seeds[gid] for gid in members)
+        expected_top = sorted(
+            members,
+            key=lambda gid: (-float(nodes_by_gid[gid]["priority_score"]), int(gid)),
+        )[:5]
+        top_gids = record.get("top_gids")
+        require(isinstance(top_gids, list) and all(isinstance(gid, str) for gid in top_gids),
+                f"cluster_id={cid}: HA-18 top_gids must be exact decimal strings")
+        top_gids = [str(exact_json_gid(gid, f"cluster_id={cid} top_gids")) for gid in top_gids]
+        require(top_gids == expected_top,
+                f"cluster_id={cid}: HA-18 top_gids order/tie-break differs from P desc and numeric gid asc")
+
+        cluster_edges = [edge for edge in edges
+                         if edge[0] in members and edge[1] in members]
+        expected_internal_tiyn = sum(edge[2] for edge in cluster_edges)
+        expected_internal_kzt = f"{expected_internal_tiyn // 100}.{expected_internal_tiyn % 100:02d}"
+        require(record.get("n_nodes") == len(members),
+                f"cluster_id={cid}: HA-18 n_nodes differs from membership")
+        require(record.get("n_seed") == expected_seeds,
+                f"cluster_id={cid}: HA-18 n_seed differs from raw nodes")
+        require(record.get("sum_kzt_internal") == expected_internal_kzt,
+                f"cluster_id={cid}: HA-18 internal turnover differs from raw edges")
+
+        hypothesis = str(record.get("hypothesis", ""))
+        leader_gid = top_gids[0]
+        leader_edges_in = [edge for edge in edges if edge[1] == leader_gid]
+        leader_edges_out = [edge for edge in edges if edge[0] == leader_gid]
+        is_isolate = len(members) == 1 and not leader_edges_in and not leader_edges_out
+
+        if is_isolate:
+            require(HA18_LEADER_PREFIX not in hypothesis,
+                    f"cluster_id={cid}: isolated gid={leader_gid} must not claim a review leader")
+            require("Один узел" in hypothesis and "без внутренних рёбер" in hypothesis
+                    and "внутренний оборот 0.00 KZT" in hypothesis,
+                    f"cluster_id={cid}: isolate text must preserve the absence-of-links summary")
+        else:
+            require(hypothesis.count(HA18_LEADER_PREFIX) == 1,
+                    f"cluster_id={cid}: non-isolated group must name exactly one HA-18 leader")
+            match = HA18_LEADER_RE.search(hypothesis)
+            require(match is not None,
+                    f"cluster_id={cid}: HA-18 leader details do not match the contract format")
+            require(str(exact_json_gid(match.group("gid"), f"cluster_id={cid} leader gid")) == leader_gid,
+                    f"cluster_id={cid}: HA-18 leader must equal top_gids[0]={leader_gid}")
+            in_degree = len({edge[0] for edge in leader_edges_in})
+            out_degree = len({edge[1] for edge in leader_edges_out})
+            in_tiyn = sum(edge[2] for edge in leader_edges_in)
+            out_tiyn = sum(edge[2] for edge in leader_edges_out)
+            expected_facts = (
+                nodes_by_gid[leader_gid]["role"], in_degree, out_degree,
+                f"{in_tiyn // 100}.{in_tiyn % 100:02d}",
+                f"{out_tiyn // 100}.{out_tiyn % 100:02d}",
+            )
+            actual_facts = (
+                match.group("role"), int(match.group("in_degree")), int(match.group("out_degree")),
+                match.group("in_amount"), match.group("out_amount"),
+            )
+            require(actual_facts == expected_facts,
+                    f"gid={leader_gid}: HA-18 role/degrees/sums differ from raw graph")
+            expected_edge_count = len({(edge[0], edge[1]) for edge in cluster_edges})
+            base_summary = (
+                f"{len(members)} узлов, {expected_seeds} seed, {expected_edge_count} внутренних рёбер, "
+                f"{expected_internal_kzt} KZT"
+            )
+            require(base_summary in hypothesis,
+                    f"cluster_id={cid}: HA-18 must preserve node/seed/internal-flow summary")
+
+        if expected_seeds == 0:
+            require("Отсутствие seed не означает безопасность." in hypothesis,
+                    f"cluster_id={cid}: no-seed caveat must remain in hypothesis")
+
+
+def test_ha18_hypothesis_fixtures(starter: Any) -> None:
+    """Exercise HA-18 ties, cross-cluster observed flow, no-seed groups and isolates."""
+    raw_nodes = pd.DataFrame({"gid": [2, 10, 50, 60, 80, 90],
+                              "is_seed": [False, True, False, False, False, True]})
+    raw_edges = pd.DataFrame(
+        [(2, 10, 100.00), (10, 2, 200.00), (50, 60, 400.00),
+         (60, 50, 50.00), (50, 2, 300.00)],
+        columns=["src", "dst", "sum_kzt"],
+    )
+    raw_edges["n_tx"], raw_edges["depth"] = 1, 1
+    raw_edges["sum_tiyn"] = raw_edges["sum_kzt"].map(
+        lambda value: amount_to_tiyn(value, "HA-18 synthetic edge")
+    )
+    graph = nx.DiGraph()
+    graph.add_nodes_from(int(gid) for gid in raw_nodes["gid"])
+    for edge in raw_edges.itertuples(index=False):
+        graph.add_edge(int(edge.src), int(edge.dst), sum_tiyn=int(edge.sum_tiyn))
+
+    features = pd.DataFrame([
+        (2, 0, "coordinator", False, 0.9), (10, 0, "coordinator", True, 0.9),
+        (50, 1, "distributor", False, 0.8), (60, 1, "transit", False, 0.4),
+        (80, 2, "peripheral", False, 0.2), (90, 3, "peripheral", True, 0.1),
+    ], columns=["gid", "cluster_id", "role", "is_seed", "priority_score"])
+    summary = starter.summarize_clusters(graph, features)
+    expected_numeric = {
+        0: (2, 1, 30_000, ["2", "10"]),
+        1: (2, 0, 45_000, ["50", "60"]),
+        2: (1, 0, 0, ["80"]),
+        3: (1, 1, 0, ["90"]),
+    }
+    records: list[dict[str, Any]] = []
+    for row in summary.itertuples(index=False):
+        expected_nodes, expected_seeds, expected_tiyn, expected_top = expected_numeric[int(row.cluster_id)]
+        require(int(row.n_nodes) == expected_nodes and int(row.n_seed) == expected_seeds
+                and int(row.sum_tiyn_internal) == expected_tiyn
+                and [str(gid) for gid in row.top_gids] == expected_top,
+                f"cluster_id={row.cluster_id}: HA-18 changed synthetic numeric baseline")
+        records.append(
+            {
+                "cluster_id": int(row.cluster_id),
+                "n_nodes": int(row.n_nodes),
+                "n_seed": int(row.n_seed),
+                "sum_kzt_internal": str(row.sum_kzt_internal),
+                "top_gids": [str(gid) for gid in row.top_gids],
+                "hypothesis": str(row.hypothesis),
+            }
+        )
+
+    nodes_by_gid = {str(int(row.gid)): {"role": row.role, "priority_score": row.priority_score}
+                    for row in features.itertuples(index=False)}
+    cluster_by_gid = {str(int(row.gid)): int(row.cluster_id)
+                      for row in features.itertuples(index=False)}
+    validate_ha18_cluster_hypotheses(
+        records, nodes_by_gid, cluster_by_gid, raw_nodes, raw_edges
+    )
 
 
 def validate_ha17_explanations(
@@ -1395,6 +1560,7 @@ def main() -> int:
         import starter
 
         test_graph_features_and_report(starter)
+        test_ha18_hypothesis_fixtures(starter)
         test_observed_daily_profiles(starter)
         test_release_json_compatibility(starter)
         test_roles_and_priority(starter)
