@@ -100,8 +100,8 @@ def run_pipeline(data_dir: Path, out_dir: Path) -> dict:
         timings["report_seconds"] = time.perf_counter() - checkpoint
 
         phase = "staged_outputs"
-        out_dir.parent.mkdir(parents=True, exist_ok=True)
-        stage = Path(tempfile.mkdtemp(prefix=f".{out_dir.name}.staging.", dir=out_dir.parent))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        stage = Path(tempfile.mkdtemp(prefix=".staging.", dir=out_dir))
         checkpoint = time.perf_counter()
         write_outputs(report, stage)
         render_report(report, stage / "report.html")
@@ -143,7 +143,6 @@ def run_pipeline(data_dir: Path, out_dir: Path) -> dict:
         )
 
         phase = "publish"
-        out_dir.mkdir(parents=True, exist_ok=True)
         previous = out_dir / "validation.json"
         if previous.exists():
             previous.replace(out_dir / f"validation.previous.{uuid.uuid4().hex}.json")
