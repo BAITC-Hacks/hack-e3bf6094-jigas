@@ -10,6 +10,7 @@ services:
   pipeline:
     build: .
     image: jigas-graph-money:local
+    cpus: 12
     volumes:
       - ./data:/app/data:ro
       - ./out:/app/out
