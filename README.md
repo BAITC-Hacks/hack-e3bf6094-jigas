@@ -15,7 +15,7 @@ docker compose run --rm pipeline
 docker compose run --rm --entrypoint python pipeline test_contract.py --data /app/data --out /app/out
 ```
 
-В отдельном терминале запустите `docker compose run --rm viewer`, затем откройте `http://127.0.0.1:8000/report.html`. До принятия кандидата эти команды описывают целевой запуск, а не уже пройденную проверку. Точные результаты и проверенные SHA ведутся в [протоколе](docs/validation.md).
+В отдельном терминале запустите `docker compose up viewer`, затем откройте `http://127.0.0.1:8000/report.html`. До принятия кандидата эти команды описывают целевой запуск, а не уже пройденную проверку. Точные результаты и проверенные SHA ведутся в [протоколе](docs/validation.md).
 
 ## Стек и требования
 
@@ -51,7 +51,7 @@ docker compose run --rm --entrypoint python pipeline test_contract.py --data /ap
 Для просмотра оставьте viewer запущенным в отдельном терминале:
 
 ```powershell
-docker compose run --rm viewer
+docker compose up viewer
 ```
 
 Затем откройте `http://127.0.0.1:8000/report.html`. Viewer раздаёт `out/` только для чтения и привязан к localhost. Откройте отчёт через HTTP: React загружает соседний `report.json`; режим `file://` для этого контракта не поддерживается.
@@ -66,7 +66,7 @@ docker compose build pipeline
 docker compose run --rm --user "$(id -u):$(id -g)" prepare
 docker compose run --rm --user "$(id -u):$(id -g)" pipeline --data /app/data --out /app/out
 docker compose run --rm --user "$(id -u):$(id -g)" --entrypoint python pipeline test_contract.py --data /app/data --out /app/out
-docker compose run --rm viewer
+docker compose up viewer
 ```
 
 Откройте `http://127.0.0.1:8000/report.html` в браузере на той же машине. Linux clean-clone маршрут пока не проверен на Linux-хосте; результат не следует считать подтверждённым до такого прогона.
