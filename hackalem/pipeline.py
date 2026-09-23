@@ -13,7 +13,7 @@ import time
 import uuid
 
 from .validation import load, sanity_check
-from .graph import build_graph, basic_features, enrich_features
+from .graph import build_graph, basic_features, enrich_features, enrich_observed_features
 from .scoring import assign_roles, compute_priority
 from .clusters import LOUVAIN_RESOLUTION, LOUVAIN_SEED, cluster_nodes, summarize_clusters
 from .report import build_report
@@ -53,6 +53,7 @@ def run_pipeline(data_dir: Path, out_dir: Path) -> dict:
         checkpoint = time.perf_counter()
         graph = build_graph(edges, nodes)
         features = enrich_features(graph, basic_features(graph, nodes), tx)
+        features, daily_profiles_by_gid = enrich_observed_features(graph, features, tx)
         timings["graph_features_seconds"] = time.perf_counter() - checkpoint
 
         phase = "roles_priority"
@@ -92,11 +93,30 @@ def run_pipeline(data_dir: Path, out_dir: Path) -> dict:
             "priority_parameters": priority_parameters,
             "weights": priority_parameters["weights"],
             "louvain": {"resolution": LOUVAIN_RESOLUTION, "seed": LOUVAIN_SEED},
+            "observed_features": {
+                "n_seed_payers": "number of distinct direct graph predecessors with is_seed=true",
+                "sync_payers_max": "maximum distinct src per (dst, date); 0 when no incoming rows are observed",
+                "fanout_burst_max": "maximum distinct dst per (src, date); 0 when no outgoing rows are observed",
+                "daily_profiles_by_gid": {
+                    "dates": "observed transaction days only, ascending YYYY-MM-DD",
+                    "amount_unit": "integer tiyn",
+                    "counts": "all transaction rows, including duplicates",
+                    "counterparties": "unique IDs per node and date",
+                    "missing_direction": 0,
+                },
+            },
         }
 
         phase = "report"
         checkpoint = time.perf_counter()
-        report = build_report(features, edges, clusters, metadata, parameters)
+        report = build_report(
+            features,
+            edges,
+            clusters,
+            metadata,
+            parameters,
+            daily_profiles_by_gid=daily_profiles_by_gid,
+        )
         timings["report_seconds"] = time.perf_counter() - checkpoint
 
         phase = "staged_outputs"
