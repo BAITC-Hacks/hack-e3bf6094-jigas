@@ -1,6 +1,6 @@
 # Параллельная разработка HackAlem AI
 
-Рабочая координация: [доска Trello](https://trello.com/b/6tCEnwZQ/hackathon), затем Git-ветки и handoff в карточке. Текущий код и спецификации всегда сверяются с `origin/main`; карточки могут обновляться параллельно. Номер карточки сам по себе неоднозначен: на доске есть разные группы `HA-15.1` и `HA-15.2`. Используйте полную ссылку на карточку.
+Рабочая координация: [доска Trello](https://trello.com/b/6tCEnwZQ/hackathon), затем Git-ветки и handoff в карточке. Текущий код и спецификации всегда сверяются с `origin/main`; карточки могут обновляться параллельно. Одновременное создание HA-15 было согласовано: миграция React — HA-15, объяснения — HA-17, маршруты — HA-16. URL карточек сохранены; при передаче используйте полную ссылку.
 
 ## Как занять задачу
 
@@ -39,7 +39,7 @@ docker compose run --rm pipeline
 ## Промпт для отдельного чата
 
 ```text
-Работаем в G:\HACKATON\hack-e3bf6094-jigas. Цель — ускорить HackAlem AI до дедлайна 23.09.2026 18:00 по Астане. Прочитай docs/PARALLEL_WORK.md, актуальные docs/SPEC.md / PRODUCT_SPEC.md / PLAN.md, HA-CTX и Trello https://trello.com/b/6tCEnwZQ/hackathon; сначала git fetch origin. Задачи и исследование меняются параллельно. В Trello есть дубли номеров HA-15: идентифицируй задачу по полной URL.
+Работаем в G:\HACKATON\hack-e3bf6094-jigas. Цель — ускорить HackAlem AI до дедлайна 23.09.2026 18:00 по Астане. Прочитай docs/PARALLEL_WORK.md, актуальные docs/SPEC.md / PRODUCT_SPEC.md / PLAN.md, HA-CTX и Trello https://trello.com/b/6tCEnwZQ/hackathon; сначала git fetch origin. Задачи и исследование меняются параллельно. Номера согласованы: HA-15 — React, HA-17 — объяснения, HA-16 — маршруты; идентифицируй задачу по полной URL.
 
 Выбери одну доступную незанятую карточку из текущего backlog с независимыми файлами и реальным результатом до freeze 16:30. Не бери frontend/, hackalem/pipeline.py, hackalem/html.py, scoring.py, report.py, test_contract.py, README.md и research/second_wave*, пока в docs/PARALLEL_WORK.md и Trello они закреплены за другими. Запиши в карточку ветку, base SHA, файлы и критерий; перемести «В работе», но никого из участников не назначай.
 
