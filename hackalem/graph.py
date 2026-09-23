@@ -105,6 +105,99 @@ def enrich_features(G: nx.DiGraph, df: pd.DataFrame, tx: pd.DataFrame) -> pd.Dat
     return enriched
 
 
+def enrich_observed_features(
+    G: nx.DiGraph,
+    df: pd.DataFrame,
+    tx: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, list[dict]]]:
+    """Add direct seed payers and exact observed daily profiles for every node."""
+    required_features = ("gid", "in_tiyn", "out_tiyn", "in_tx", "out_tx")
+    missing_features = [column for column in required_features if column not in df.columns]
+    if missing_features:
+        raise ValueError(f"observed features are missing columns: {', '.join(missing_features)}")
+    required_transactions = ("src", "dst", "date", "sum_tiyn")
+    missing_transactions = [column for column in required_transactions if column not in tx.columns]
+    if missing_transactions:
+        raise ValueError(f"transactions are missing columns: {', '.join(missing_transactions)}")
+
+    graph_ids = {int(gid) for gid in G.nodes}
+    feature_ids = {int(gid) for gid in df["gid"]}
+    if feature_ids != graph_ids or len(feature_ids) != len(df):
+        raise ValueError("observed feature rows must cover graph nodes exactly once")
+    if any("is_seed" not in G.nodes[gid] for gid in G.nodes):
+        raise ValueError("graph nodes must include the is_seed attribute")
+
+    # Each day stores [in_tiyn, out_tiyn, in_tx, out_tx, payers, payees].
+    daily: dict[int, dict[str, list]] = {gid: {} for gid in graph_ids}
+    dates = pd.to_datetime(tx["date"], errors="coerce")
+    if dates.isna().any():
+        raise ValueError("transactions.date contains an invalid date")
+    for src_value, dst_value, date_value, amount_value in zip(
+        tx["src"], tx["dst"], dates, tx["sum_tiyn"]
+    ):
+        src = int(src_value)
+        dst = int(dst_value)
+        if src not in graph_ids or dst not in graph_ids:
+            raise ValueError("transaction endpoint is absent from graph nodes")
+        if isinstance(amount_value, (bool, np.bool_)) or not isinstance(amount_value, (int, np.integer)):
+            raise ValueError("transactions.sum_tiyn must contain exact integers")
+        amount = int(amount_value)
+        if amount <= 0:
+            raise ValueError("transactions.sum_tiyn must be positive")
+        day = pd.Timestamp(date_value).date().isoformat()
+
+        incoming = daily[dst].setdefault(day, [0, 0, 0, 0, set(), set()])
+        incoming[0] += amount
+        incoming[2] += 1
+        incoming[4].add(src)
+
+        outgoing = daily[src].setdefault(day, [0, 0, 0, 0, set(), set()])
+        outgoing[1] += amount
+        outgoing[3] += 1
+        outgoing[5].add(dst)
+
+    result = df.copy()
+    seed_payers = {}
+    sync_payers_max = {}
+    fanout_burst_max = {}
+    daily_profiles_by_gid: dict[str, list[dict]] = {}
+    for gid in sorted(graph_ids):
+        seed_payers[gid] = sum(
+            bool(G.nodes[payer]["is_seed"])
+            for payer in G.predecessors(gid)
+        )
+        records = []
+        for day in sorted(daily[gid]):
+            in_tiyn, out_tiyn, in_tx, out_tx, payers, payees = daily[gid][day]
+            records.append({
+                "date": day,
+                "in_tiyn": int(in_tiyn),
+                "out_tiyn": int(out_tiyn),
+                "in_tx": int(in_tx),
+                "out_tx": int(out_tx),
+                "n_payers": len(payers),
+                "n_payees": len(payees),
+            })
+        daily_profiles_by_gid[str(gid)] = records
+        sync_payers_max[gid] = max((record["n_payers"] for record in records), default=0)
+        fanout_burst_max[gid] = max((record["n_payees"] for record in records), default=0)
+
+    result["n_seed_payers"] = result["gid"].map(seed_payers).astype("int64")
+    result["sync_payers_max"] = result["gid"].map(sync_payers_max).astype("int64")
+    result["fanout_burst_max"] = result["gid"].map(fanout_burst_max).astype("int64")
+
+    for row in result.itertuples(index=False):
+        profile = daily_profiles_by_gid[str(int(row.gid))]
+        for field in ("in_tiyn", "out_tiyn", "in_tx", "out_tx"):
+            observed_total = sum(record[field] for record in profile)
+            if observed_total != int(getattr(row, field)):
+                raise ValueError(
+                    f"daily {field} does not match node {int(row.gid)} aggregate"
+                )
+
+    return result, daily_profiles_by_gid
+
+
 def hints(G: nx.DiGraph, df: pd.DataFrame):
     """Куда смотреть дальше. Ответов здесь нет — только направления."""
     print("\nС ЧЕГО НАЧАТЬ")
