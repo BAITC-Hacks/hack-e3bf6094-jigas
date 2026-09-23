@@ -72,29 +72,29 @@ def make_sample() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Return a tiny graph with a cycle, opposing edges, seeds, and an isolate."""
     nodes = pd.DataFrame(
         {
-            "gid": [BIG_GID, 10, 20, 40, 60, 80],
-            "depth": [0, 1, 2, 4, 0, 1],
-            "is_seed": [True, False, False, False, True, False],
+            "gid": [2, 10, 20, 30, 40, 80, BIG_GID],
+            "depth": [0, 0, 1, 2, 4, 1, 1],
+            "is_seed": [True, True, False, False, False, False, False],
         }
     )
     edges = pd.DataFrame(
         [
-            (BIG_GID, 10, 5_000.00, 1, 1),
-            (10, 20, 12_000.00, 2, 1),
-            (20, 10, 18_000.00, 1, 1),
-            (20, 40, 9_000.00, 1, 3),
-            (60, 20, 5_000.00, 1, 1),
+            (2, 20, 5_000.00, 1, 1),
+            (10, 20, 5_000.00, 1, 1),
+            (20, 30, 12_000.00, 2, 1),
+            (30, 20, 18_000.00, 1, 1),
+            (30, 40, 9_000.00, 1, 3),
         ],
         columns=["src", "dst", "sum_kzt", "n_tx", "depth"],
     )
     tx = pd.DataFrame(
         [
-            (BIG_GID, 10, "2026-07-01", 5_000.00),
-            (10, 20, "2026-07-02", 6_000.00),
-            (10, 20, "2026-07-04", 6_000.00),
-            (20, 10, "2026-07-03", 18_000.00),
-            (20, 40, "2026-07-31", 9_000.00),
-            (60, 20, "2026-07-05", 5_000.00),
+            (2, 20, "2026-07-01", 5_000.00),
+            (10, 20, "2026-07-02", 5_000.00),
+            (20, 30, "2026-07-02", 6_000.00),
+            (20, 30, "2026-07-04", 6_000.00),
+            (30, 20, "2026-07-03", 18_000.00),
+            (30, 40, "2026-07-31", 9_000.00),
         ],
         columns=["src", "dst", "date", "sum_kzt"],
     )
@@ -121,14 +121,14 @@ def expect_value_error(label: str, function: Callable[[], Any]) -> None:
 def test_input_validation(starter: Any) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     edges, nodes, tx = make_sample()
     orphans = without_stdout(starter.sanity_check, edges, nodes, tx)
-    require({int(gid) for gid in orphans} == {80},
-            f"input validation: expected only isolated gid=80, got {orphans!r}")
+    require({int(gid) for gid in orphans} == {80, BIG_GID},
+            f"input validation: expected isolated gids 80 and {BIG_GID}, got {orphans!r}")
     require("sum_tiyn" in edges.columns and "sum_tiyn" in tx.columns,
             "input validation: successful check must add integer sum_tiyn")
     require(pd.api.types.is_integer_dtype(edges["sum_tiyn"].dtype),
             "input validation: edge sum_tiyn must use integer tiyn")
-    require(int(edges.loc[(edges.src == BIG_GID) & (edges.dst == 10), "sum_tiyn"].iloc[0]) == 500_000,
-            f"gid={BIG_GID}: conversion to tiyn changed the exact ID or amount")
+    require(int(edges.loc[(edges.src == 2) & (edges.dst == 20), "sum_tiyn"].iloc[0]) == 500_000,
+            "sample edge 2->20: conversion to tiyn changed the exact amount")
 
     bad_edges, bad_nodes, bad_tx = make_sample()
     bad_edges.loc[0, "dst"] = 999
@@ -158,13 +158,13 @@ def test_graph_features_and_report(starter: Any) -> None:
     graph = starter.build_graph(edges, nodes)
     require(isinstance(graph, nx.DiGraph), "build_graph must return a directed NetworkX graph")
     require(set(graph.nodes) == {int(gid) for gid in nodes.gid},
-            "build_graph must include every node row, including isolated gid=80")
+            "build_graph must include every node row, including both isolates")
     require(BIG_GID in graph, f"build_graph rounded or dropped gid={BIG_GID}")
-    require(graph.has_edge(10, 20) and graph.has_edge(20, 10),
+    require(graph.has_edge(20, 30) and graph.has_edge(30, 20),
             "build_graph must retain both directions of opposing edges")
-    edge = graph[BIG_GID][10]
+    edge = graph[2][20]
     require(int(edge["sum_tiyn"]) == 500_000 and int(edge["n_tx"]) == 1,
-            f"gid={BIG_GID}->10: edge attributes do not preserve integer amount/count")
+            "gid=2->20: edge attributes do not preserve integer amount/count")
 
     basic = starter.basic_features(graph, nodes)
     required = {
@@ -183,25 +183,25 @@ def test_graph_features_and_report(starter: Any) -> None:
             "gid=40: boundary should retain its incoming amount and zero outgoing degree")
     require(float(boundary["pass_through"]) == 0.0,
             "gid=40: positive input and zero output should have pass_through=0")
-    seed = frame_record(basic, BIG_GID)
-    require(pd.isna(seed["pass_through"]),
+    large_id_row = frame_record(basic, BIG_GID)
+    require(pd.isna(large_id_row["pass_through"]),
             f"gid={BIG_GID}: zero incoming amount means pass_through is unknown")
 
     enriched = starter.enrich_features(graph, basic, tx)
     for name in ("seed_reach_count", "betweenness", "last_in", "days_after_last_in"):
         require(name in enriched.columns, f"enrich_features missing {name}")
-    for gid in (10, 20, 40):
+    for gid in (20, 30, 40):
         row = frame_record(enriched, gid)
         require(int(row["seed_reach_count"]) == 2,
                 f"gid={gid}: two distinct seeds should reach it within four steps, got {row['seed_reach_count']}")
-    close(frame_record(enriched, 10)["betweenness"], 0.10,
-          "gid=10: directed, unweighted, normalized betweenness")
-    close(frame_record(enriched, 20)["betweenness"], 0.20,
+    close(frame_record(enriched, 20)["betweenness"], 4 / 30,
           "gid=20: directed, unweighted, normalized betweenness")
-    require(pd.Timestamp(frame_record(enriched, 10)["last_in"]).date() == date(2026, 7, 3),
-            "gid=10: last_in must use the latest inbound calendar date")
-    require(int(frame_record(enriched, 10)["days_after_last_in"]) == 28,
-            "gid=10: D must be measured from 2026-07-31 in calendar days")
+    close(frame_record(enriched, 30)["betweenness"], 3 / 30,
+          "gid=30: directed, unweighted, normalized betweenness")
+    require(pd.Timestamp(frame_record(enriched, 20)["last_in"]).date() == date(2026, 7, 3),
+            "gid=20: last_in must use the latest inbound calendar date")
+    require(int(frame_record(enriched, 20)["days_after_last_in"]) == 28,
+            "gid=20: D must be measured from 2026-07-31 in calendar days")
     require(int(frame_record(enriched, 40)["days_after_last_in"]) == 0,
             "gid=40: inbound transaction on 2026-07-31 must have D=0")
     require(pd.isna(frame_record(enriched, BIG_GID)["last_in"]),
@@ -213,8 +213,12 @@ def test_graph_features_and_report(starter: Any) -> None:
     cluster_map = starter.cluster_nodes(graph)
     require({int(gid) for gid in cluster_map} == {int(gid) for gid in nodes.gid},
             "cluster_nodes must assign every node exactly once")
-    require(len({int(cluster_map[gid]) for gid in cluster_map}) >= 2,
-            "cluster_nodes must keep isolated gid=80 in its own cluster")
+    cluster_members = {}
+    for gid, cid in cluster_map.items():
+        cluster_members.setdefault(int(cid), set()).add(int(gid))
+    for isolated_gid in (80, BIG_GID):
+        require(next(group for group in cluster_members.values() if isolated_gid in group) == {isolated_gid},
+                f"cluster_nodes must give isolated gid={isolated_gid} its own cluster")
     prioritized = prioritized.copy()
     prioritized["cluster_id"] = prioritized["gid"].map(cluster_map)
     summaries = starter.summarize_clusters(graph, prioritized)
@@ -249,9 +253,9 @@ def test_graph_features_and_report(starter: Any) -> None:
     )[:20]
     require(report_top_gids == expected_report_top,
             "build_report top_nodes must use unrounded score desc then numeric gid asc")
-    require(scores_by_gid[str(BIG_GID)] == scores_by_gid["60"],
-            "synthetic seeds BIG_GID and 60 should create an exact priority tie")
-    require(report_top_gids.index("60") < report_top_gids.index(str(BIG_GID)),
+    require(scores_by_gid["2"] == scores_by_gid["10"],
+            "synthetic seeds 2 and 10 should create an exact priority tie")
+    require(report_top_gids.index("2") < report_top_gids.index("10"),
             "equal priority must be broken by numeric gid, not lexicographic string order")
     for edge_json in report.get("edges", []):
         require(isinstance(edge_json["src"], str) and isinstance(edge_json["dst"], str),
