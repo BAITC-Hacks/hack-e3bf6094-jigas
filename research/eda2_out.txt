@@ -1,0 +1,130 @@
+=== endpoint check (fixed precedence) ===
+edge endpoints not in nodes: 0; unique src: 694; unique dst: 2206
+
+=== has_outflow rate by depth (prior for frontier nodes) ===
+depth 0: n=81, has_out=50 (0.62), in_deg mean 1.54, in_sum median 0, in_deg>=3: 14
+depth 1: n=472, has_out=167 (0.35), in_deg mean 1.67, in_sum median 65,000, in_deg>=3: 75
+depth 2: n=462, has_out=193 (0.42), in_deg mean 1.69, in_sum median 54,182, in_deg>=3: 70
+depth 3: n=789, has_out=284 (0.36), in_deg mean 1.23, in_sum median 49,650, in_deg>=3: 38
+depth 4: n=444, has_out=0 (0.00), in_deg mean 1.03, in_sum median 33,500, in_deg>=3: 3
+depth1-3 has_out rate by in_deg bucket:
+        n   has_out  in_sum_med
+b                              
+1    1312  0.286585    39069.00
+2     228  0.570175   159650.00
+3-4   138  0.731884   248157.50
+5+     45  0.822222   554523.95
+                         n   has_out
+sb                                  
+(4999.999, 23000.0]    434  0.313364
+(23000.0, 53550.0]     429  0.270396
+(53550.0, 180066.0]    429  0.412587
+(180066.0, 431604.0]   258  0.472868
+(431604.0, 4500000.0]  173  0.537572
+
+=== seed-payer counts (collecting from couriers) ===
+nodes receiving from >=2 distinct seeds: 24; >=3: 3; >=5: 1
+                   dst  n_seed_payers          s  depth  is_seed  in_deg  out_deg      in_sum    out_sum
+0   100000005382566100              6   335066.0      0     True       7        1   393066.00    50000.0
+1   100000006972210100              3   488775.0      1    False       3        0   488775.00        0.0
+2   100000004015047100              3   544884.0      1    False       9        1   919104.00    69195.0
+3   100000007129492100              2    50990.0      1    False       2        1    50990.00    37000.0
+4   100000001732159100              2  2378100.0      0     True       2        4  2378100.00  1505966.0
+5   100000001924185100              2   151000.0      1    False       2        0   151000.00        0.0
+6   100000001929088100              2   396010.0      1    False       2        0   396010.00        0.0
+7   100000008637537100              2   613890.0      0     True       3        3   619890.00  2351495.0
+8   100000008314203100              2   382076.0      0     True       2        2   382076.00   327000.0
+9   100000008094734100              2   197000.0      1    False       4        0   236249.00        0.0
+10  100000002762076100              2   140350.0      1    False       2        1   140350.00    30000.0
+11  100000002838861100              2   397500.0      1    False       5        1   554523.95    10000.0
+
+=== largest SCC composition ===
+size 85; seeds 2; depth dist {0: 2, 1: 28, 2: 28, 3: 27}; in_deg mean 2.9; out_deg mean 13.1; total in 20,158,530; total out 109,683,343
+SCC top by in_sum:
+                     gid  depth  is_seed  in_deg  out_deg     in_sum     out_sum  in_tx  out_tx
+400   100000008686313100      1    False       6        7  1912716.0    333800.0     16      13
+912   100000008603629100      2    False      19       61  1817300.0   4986156.0     45      74
+690   100000005933757100      2    False       4       34  1246000.0   3002628.0      6      46
+737   100000000437046100      2    False       9       42  1107200.0   7606224.0     20      73
+561   100000000331309100      2    False       5       99   984635.0  23001375.0      8     126
+604   100000001857829100      2    False       6       16   888535.0   2390993.0      9      16
+58    100000006866783100      0     True      13       67   838812.0   3948037.0     31      90
+601   100000008477350100      2    False      11       39   610100.0   3374866.0     14      44
+9     100000003016635100      0     True       8       73   586981.0   9414081.0     36     151
+1008  100000003242289100      2    False       3       23   550791.0   2377741.0      8      26
+internal SCC edges 242, sum 19,453,337; edges out of SCC 875 sum 90,230,006; into SCC 7 sum 705,193
+
+=== communities & bridging ===
+resolution 0.5: 73 comms, >1 seed: 7, sizes [760, 270, 172, 168, 151, 106, 51, 48, 45, 45]
+resolution 1.0: 91 comms, >1 seed: 8, sizes [277, 270, 148, 126, 126, 125, 106, 104, 61, 59]
+resolution 2.0: 113 comms, >1 seed: 8, sizes [150, 123, 120, 112, 110, 101, 101, 95, 85, 74]
+NMI between louvain seeds: [0.97, 0.976, 0.972, 0.951, 0.974, 0.955, 0.956, 0.967, 0.969, 0.959]
+cross-community edges: 567 (18.2%), sum 34,489,367 (9.4%)
+nodes receiving from >=2 distinct communities: 274; >=3: 87
+dst
+100000003684369100    6
+100000008346837100    6
+100000004015047100    5
+100000008165763100    5
+100000000331309100    5
+100000003115284100    5
+100000007594394100    4
+100000008547948100    4
+100000002894076100    4
+100000007442518100    4
+
+=== cluster summary (seed=42) ===
+clusters: 91; size dist: {'count': 91.0, 'mean': 24.7, 'std': 49.0, 'min': 1.0, '25%': 2.0, '50%': 6.0, '75%': 17.5, 'max': 277.0}; clusters with n_seed==0: 43; singletons 19
+       n  n_seed  depth_mean
+cid                         
+47   277       1    2.646209
+46   270       1    2.044444
+24   148       5    1.736486
+90   126       0    3.142857
+82   126       0    3.293651
+20   125       7    1.600000
+29   106       4    1.905660
+80   104       1    2.903846
+49    61       0    3.278689
+33    59       1    1.932203
+66    56       3    2.732143
+43    55       1    1.927273
+54    51       0    2.941176
+55    50       3    2.680000
+45    44       0    2.818182
+
+=== temporal pass-through (FIFO approx, within 2 days) ===
+nodes evaluated 671; fast_share>=0.8: 193; fast_share>=0.5: 275; median fast_share 0.30
+nodes with fwd_share (fast out / in) in [0.7,1.3]: 92
+
+=== structuring near threshold ===
+payers with >=3 tx in [5000,6000): 33; top {100000005287097100: 16, 100000007593823100: 11, 100000008460102100: 9, 100000002513028100: 8, 100000003016635100: 7, 100000002957787100: 6, 100000007908818100: 6, 100000005910114100: 5}
+src-days with >=5 tx: 186; >=10: 18; src-days with >=5 distinct payees: 141
+
+=== 2-hop chains through pass-through nodes ===
+transit-like nodes (ratio 0.8-1.2, non-seed): 70; A->B->C chains through them: 477
+transit-like nodes sample:
+                     gid  depth  is_seed  in_deg  out_deg     in_sum    out_sum  in_tx  out_tx  cid     ratio
+454   100000004135268100      1    False       2        3  1239000.0  1000200.0      3       4   38  0.807264
+88    100000008165763100      1    False      15       17  1165815.0  1267858.0     26      17   24  1.087529
+1686  100000005171642100      3    False       2        1   696800.0   683600.0      5       4   31  0.981056
+438   100000006518161100      1    False       3        2   594200.0   595899.0     13      13   20  1.002859
+925   100000008324800100      2    False       3        1   526500.0   511000.0     17      13   71  0.970560
+1118  100000002531406100      3    False       1        1   520000.0   500000.0      1       1   82  0.961538
+236   100000008723830100      1    False       2        1   459785.0   455000.0      2       1   20  0.989593
+1275  100000006704530100      3    False       1        3   450500.0   428000.0      1       5   76  0.950055
+334   100000000661912100      1    False       5        2   393036.0   430700.0      9       8   47  1.095828
+669   100000000291906100      2    False       2        2   388000.0   455854.0      3       6   48  1.174881
+
+=== robustness: remove top-k by betweenness / out_sum ===
+base: n_wcc, giant, singletons = (35, 1877, 19)
+remove top5 betweenness: (129, 1717, 84); flow touched 6.7%
+remove top5 out_sum: (187, 1620, 134); flow touched 19.6%
+remove top10 betweenness: (228, 1567, 160); flow touched 14.8%
+remove top10 out_sum: (265, 1502, 188); flow touched 28.3%
+remove top20 betweenness: (398, 1257, 275); flow touched 24.3%
+remove top20 out_sum: (407, 1266, 290); flow touched 39.2%
+
+=== in_tx vs in_deg; frontier ===
+nodes with in_tx>=10: 66; in_tx>=10 & in_deg<=2: 26
+share of flow into depth4 frontier nodes: 23.5%; frontier nodes with in_deg>=3: 3; frontier in_sum>=1M: 13
