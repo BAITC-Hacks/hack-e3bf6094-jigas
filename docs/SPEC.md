@@ -209,26 +209,26 @@ Baseline — формула §5 и отдельный топ по `in_tiyn+out_t
 
 ## 11. Точки реализации для агентов
 
-Исходные точки расширения сверены с `starter/starter.py` внутри `track_data/starter (1).zip`. В `main` уже присутствуют корневые `starter.py`, `requirements.txt`, Docker-окружение, HTML-шаблон и проверки. Таблица ниже задаёт согласованные сигнатуры; готовность каждой функции определяется результатом соответствующей карточки и приёмкой. Это расширение выданного starter, без нового пакета, классов сервисов или API-сервера.
+Исходные точки расширения сверены с `starter/starter.py` внутри `track_data/starter (1).zip`. В `main` уже присутствуют корневые `starter.py`, `requirements.txt`, Docker-окружение, HTML-шаблон и проверки. Таблица ниже задаёт согласованные публичные сигнатуры; готовность каждой функции определяется результатом соответствующей карточки и приёмкой. Реализация разделена на внутренние модули `hackalem/`, а корневой `starter.py` сохраняет совместимый фасад функций и CLI. Внутренний пакет не добавляет стороннюю Python-зависимость, классы сервисов или API-сервер.
 
-| Функция в `starter.py` | Вход → результат | Подзадача |
-|---|---|---|
-| `load(data_dir)` | `Path` → `(edges, nodes, tx)`; сохранить порядок выданного starter | HA-01.1 |
-| `sanity_check(edges, nodes, tx)` | Проверить §2; после успешной проверки добавить целую `sum_tiyn` в edges/tx; вернуть множество изолятов, как в starter. Ошибка — `ValueError` с причиной, не отключаемый `assert` | HA-01.2 |
-| `build_graph(edges, nodes)` | Валидированные таблицы → `DiGraph` со всеми узлами и атрибутами `sum_tiyn`, `n_tx`, `depth` рёбер | HA-02.1 |
-| `basic_features(G, nodes)` | `DataFrame`, одна строка на gid: depth/is_seed, степени, целые суммы, counts, отношение, boundary/isolated | HA-02.1 |
-| `enrich_features(G, df, tx)` | Новая таблица с S/B/last_in/D из §3; базовые колонки сохранены | HA-02.2 |
-| `assign_roles(df)` | `(df, role_parameters)`; добавить role/role_score/matched_roles. Элемент matched_roles: `{"role": "consolidator", "support": 0.6}` | HA-03.1 |
-| `compute_priority(df)` | `(df, priority_parameters)`; добавить priority_score, score_components, evidence, why; сохраняются все исходные признаки | HA-03.2 |
-| `cluster_nodes(G)` | Отображение `gid:int → cluster_id:int`, включающее каждый узел | HA-04.1 |
-| `summarize_clusters(G, df)` | df уже содержит cluster_id/P → таблица сводок: cluster_id, n_nodes, n_seed, **sum_tiyn_internal:int**, top_gids как список точных int, hypothesis | HA-04.2 |
-| `build_report(df, edges, clusters, metadata, parameters)` | Один JSON-совместимый dict по §8; преобразование ID в строки и unknown в null выполняется здесь | HA-05.1 |
-| `write_outputs(report, out_dir)` | Один объект → три CSV по §7 в переданном каталоге. Старый вариант с пустыми ролями заменить | HA-05.2 |
-| `render_report(report, out_path)` | Объект + локальный шаблон/ресурсы → автономный HTML; путь шаблона относительно `__file__`, не текущего каталога | HA-07.1 |
-| `main()` | Сохранить CLI `--data/--out`; связать этапы, временный выпуск, проверку и validation.json | HA-07.1 |
-| `enrich_observed_features(G, df, tx)` · P1 | `(df, daily_profiles_by_gid)`; поля §10.1, профиль с точными строковыми ключами | HA-11.1 |
-| `summarize_structure(G, df)` · P1 | `(df, structure)`; добавить n_payer_comms/scc_id/scc_size, `structure={community_edges,sccs,coverage}` по §10.2 | HA-13.1 |
-| `build_data_requests(df, daily_profiles_by_gid)` · P1 | df с колонкой next_data_requests по §10.3; `boundary_gids_by_inflow` собрать из отсортированного df при выпуске | HA-14.1 |
+| Публичная функция (`starter.py`) | Модуль реализации | Вход → результат | Подзадача |
+|---|---|---|---|
+| `load(data_dir)` | `hackalem/validation.py` | `Path` → `(edges, nodes, tx)`; сохранить порядок выданного starter | HA-01.1 |
+| `sanity_check(edges, nodes, tx)` | `hackalem/validation.py` | Проверить §2; после успешной проверки добавить целую `sum_tiyn` в edges/tx; вернуть множество изолятов, как в starter. Ошибка — `ValueError` с причиной, не отключаемый `assert` | HA-01.2 |
+| `build_graph(edges, nodes)` | `hackalem/graph.py` | Валидированные таблицы → `DiGraph` со всеми узлами и атрибутами `sum_tiyn`, `n_tx`, `depth` рёбер | HA-02.1 |
+| `basic_features(G, nodes)` | `hackalem/graph.py` | `DataFrame`, одна строка на gid: depth/is_seed, степени, целые суммы, counts, отношение, boundary/isolated | HA-02.1 |
+| `enrich_features(G, df, tx)` | `hackalem/graph.py` | Новая таблица с S/B/last_in/D из §3; базовые колонки сохранены | HA-02.2 |
+| `assign_roles(df)` | `hackalem/scoring.py` | `(df, role_parameters)`; добавить role/role_score/matched_roles. Элемент matched_roles: `{"role": "consolidator", "support": 0.6}` | HA-03.1 |
+| `compute_priority(df)` | `hackalem/scoring.py` | `(df, priority_parameters)`; добавить priority_score, score_components, evidence, why; сохраняются все исходные признаки | HA-03.2 |
+| `cluster_nodes(G)` | `hackalem/clusters.py` | Отображение `gid:int → cluster_id:int`, включающее каждый узел | HA-04.1 |
+| `summarize_clusters(G, df)` | `hackalem/clusters.py` | df уже содержит cluster_id/P → таблица сводок: cluster_id, n_nodes, n_seed, **sum_tiyn_internal:int**, top_gids как список точных int, hypothesis | HA-04.2 |
+| `build_report(df, edges, clusters, metadata, parameters)` | `hackalem/report.py` | Один JSON-совместимый dict по §8; преобразование ID в строки и unknown в null выполняется здесь | HA-05.1 |
+| `write_outputs(report, out_dir)` | `hackalem/exports.py` | Один объект → три CSV по §7 в переданном каталоге. Старый вариант с пустыми ролями заменить | HA-05.2 |
+| `render_report(report, out_path)` | `hackalem/html.py` | Объект + локальный шаблон/ресурсы → автономный HTML; путь шаблона относительно модуля, не текущего каталога | HA-07.1 |
+| `main()` | `hackalem/pipeline.py` | Сохранить CLI `--data/--out`; связать этапы, временный выпуск, проверку и validation.json | HA-07.1 |
+| `enrich_observed_features(G, df, tx)` · P1 | `hackalem/graph.py` | `(df, daily_profiles_by_gid)`; поля §10.1, профиль с точными строковыми ключами | HA-11.1 |
+| `summarize_structure(G, df)` · P1 | `hackalem/clusters.py` | `(df, structure)`; добавить n_payer_comms/scc_id/scc_size, `structure={community_edges,sccs,coverage}` по §10.2 | HA-13.1 |
+| `build_data_requests(df, daily_profiles_by_gid)` · P1 | `hackalem/requests.py` (создать для HA-14.1) | df с колонкой next_data_requests по §10.3; `boundary_gids_by_inflow` собрать из отсортированного df при выпуске | HA-14.1 |
 
 Это минимальные согласованные стыки. Имя внутренней локальной переменной не является контрактом. При необходимой смене публичной сигнатуры обновить её здесь, всех вызывающих и зависимую карточку до передачи результата.
 
