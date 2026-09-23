@@ -172,39 +172,46 @@ def sanity_check(edges, nodes, tx):
 
 # ---------------------------------------------------------------- граф
 
-def build_graph(edges) -> nx.DiGraph:
-    """Направленный граф. sum_kzt — вес ребра, n_tx — количество переводов."""
+def build_graph(edges: pd.DataFrame, nodes: pd.DataFrame) -> nx.DiGraph:
+    """Build a full directed graph from validated nodes and aggregated edges."""
     G = nx.DiGraph()
-    for r in edges.itertuples(index=False):
-        G.add_edge(r.src, r.dst, sum_kzt=float(r.sum_kzt), n_tx=int(r.n_tx), depth=int(r.depth))
+    for row in nodes[["gid", "depth", "is_seed"]].itertuples(index=False):
+        G.add_node(int(row.gid), depth=int(row.depth), is_seed=bool(row.is_seed))
+    for row in edges[["src", "dst", "sum_tiyn", "n_tx", "depth"]].itertuples(index=False):
+        G.add_edge(
+            int(row.src),
+            int(row.dst),
+            sum_tiyn=int(row.sum_tiyn),
+            n_tx=int(row.n_tx),
+            depth=int(row.depth),
+        )
     return G
 
 
 def basic_features(G: nx.DiGraph, nodes: pd.DataFrame) -> pd.DataFrame:
-    """Базовые метрики. Это старт, а не финиш — добавляйте свои."""
+    """Compute exact directed degree, flow, boundary, and isolation features."""
     in_deg = dict(G.in_degree())
     out_deg = dict(G.out_degree())
-    in_kzt = dict(G.in_degree(weight="sum_kzt"))
-    out_kzt = dict(G.out_degree(weight="sum_kzt"))
+    in_tiyn = dict(G.in_degree(weight="sum_tiyn"))
+    out_tiyn = dict(G.out_degree(weight="sum_tiyn"))
     in_tx = dict(G.in_degree(weight="n_tx"))
     out_tx = dict(G.out_degree(weight="n_tx"))
-    pr = nx.pagerank(G, weight="sum_kzt")
 
     df = nodes[["gid", "depth", "is_seed"]].copy()
-    df["in_deg"] = df.gid.map(in_deg).fillna(0).astype(int)
-    df["out_deg"] = df.gid.map(out_deg).fillna(0).astype(int)
-    df["in_kzt"] = df.gid.map(in_kzt).fillna(0.0)
-    df["out_kzt"] = df.gid.map(out_kzt).fillna(0.0)
-    df["in_tx"] = df.gid.map(in_tx).fillna(0).astype(int)
-    df["out_tx"] = df.gid.map(out_tx).fillna(0).astype(int)
-    df["pagerank"] = df.gid.map(pr).fillna(0.0)
-
-    # доля полученного, которая ушла дальше. Около 1.0 — деньги не задерживаются.
-    df["pass_through"] = np.where(df.in_kzt > 0, df.out_kzt / df.in_kzt.replace(0, np.nan), np.nan)
-
-    # ЛОВУШКА КЕЙСА: узел на 4-м колене без исходящих может быть не «стоком»,
-    # а просто местом, где закончился обход. Разберитесь с этим.
-    df["truncated_by_depth"] = (df.depth == 4) & (df.out_deg == 0)
+    df["in_deg"] = df["gid"].map(in_deg).astype("int64")
+    df["out_deg"] = df["gid"].map(out_deg).astype("int64")
+    df["in_tiyn"] = df["gid"].map(in_tiyn).astype("int64")
+    df["out_tiyn"] = df["gid"].map(out_tiyn).astype("int64")
+    df["in_tx"] = df["gid"].map(in_tx).astype("int64")
+    df["out_tx"] = df["gid"].map(out_tx).astype("int64")
+    df["pass_through"] = np.divide(
+        df["out_tiyn"].to_numpy(dtype=np.float64),
+        df["in_tiyn"].to_numpy(dtype=np.float64),
+        out=np.full(len(df), np.nan, dtype=np.float64),
+        where=df["in_tiyn"].to_numpy(dtype=np.int64) != 0,
+    )
+    df["boundary"] = df["depth"].eq(4) & df["out_deg"].eq(0)
+    df["isolated"] = df["in_deg"].eq(0) & df["out_deg"].eq(0)
     return df
 
 
@@ -221,8 +228,8 @@ def write_outputs(df: pd.DataFrame, out_dir: Path):
     roles["priority_score"] = 0.0 # TODO: 0..1
     roles["evidence"] = ""        # TODO: почему — с числами, до 200 символов
     roles = roles.merge(
-        df[["gid", "in_deg", "out_deg", "in_kzt", "out_kzt", "pagerank",
-            "pass_through", "depth", "is_seed", "truncated_by_depth"]],
+        df[["gid", "in_deg", "out_deg", "in_tiyn", "out_tiyn",
+            "pass_through", "depth", "is_seed", "boundary", "isolated"]],
         on="gid", how="left")
     roles.to_csv(out_dir / "nodes_roles.csv", index=False)
 
@@ -247,7 +254,7 @@ def hints(G: nx.DiGraph, df: pd.DataFrame):
     print(f"  узлов, получающих от 3+ разных плательщиков : {(df.in_deg >= 3).sum()}")
     print(f"  узлов, рассылающих на 10+ получателей       : {(df.out_deg >= 10).sum()}")
     print(f"  узлов и с входом, и с выходом               : {((df.in_deg > 0) & (df.out_deg > 0)).sum()}")
-    print(f"  узлов, обрезанных 4-м коленом               : {df.truncated_by_depth.sum()}  <- разберитесь")
+    print(f"  boundary на depth=4 без исходящих           : {df.boundary.sum()}")
     print(f"  слабосвязных компонент                      : {nx.number_weakly_connected_components(G)}")
     print("""
   Вопросы, на которые стоит ответить метриками:
@@ -256,8 +263,8 @@ def hints(G: nx.DiGraph, df: pd.DataFrame):
     * узел собирает средства от нескольких SEED — это случайность или структура?
     * если убрать узел, сеть распадётся или переживёт?
 
-  Полезное в networkx: pagerank, hits, betweenness_centrality,
-  community.louvain_communities, simple_cycles, all_simple_paths.
+  Полезное в networkx: betweenness_centrality, community.louvain_communities,
+  simple_cycles, all_simple_paths.
   Не забудьте: граф НАПРАВЛЕННЫЙ и ВЗВЕШЕННЫЙ.
 """)
 
@@ -273,7 +280,7 @@ def main():
         sanity_check(edges, nodes, tx)
     except ValueError as exc:
         ap.error(str(exc))
-    G = build_graph(edges)
+    G = build_graph(edges, nodes)
     df = basic_features(G, nodes)
     write_outputs(df, Path(a.out))
     hints(G, df)
