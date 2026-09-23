@@ -1,4 +1,4 @@
-"""Run the local batch pipeline and publish a validated five-file release."""
+"""Run the batch pipeline and publish a validated static viewer release."""
 
 import argparse
 from datetime import datetime, timezone
@@ -18,11 +18,11 @@ from .scoring import assign_roles, compute_priority
 from .clusters import LOUVAIN_RESOLUTION, LOUVAIN_SEED, cluster_nodes, summarize_clusters
 from .report import build_report
 from .exports import write_outputs
-from .html import render_report
+from .html import stage_viewer
 
 
 INPUT_FILES = ("nodes.parquet", "edges.parquet", "transactions.parquet")
-OUTPUT_FILES = ("nodes_roles.csv", "clusters.csv", "top_nodes.csv", "report.html")
+OUTPUT_FILES = ("nodes_roles.csv", "clusters.csv", "top_nodes.csv", "report.json", "report.html")
 
 
 def _sha256(path: Path) -> str:
@@ -104,8 +104,12 @@ def run_pipeline(data_dir: Path, out_dir: Path) -> dict:
         stage = Path(tempfile.mkdtemp(prefix=".staging.", dir=out_dir))
         checkpoint = time.perf_counter()
         write_outputs(report, stage)
-        render_report(report, stage / "report.html")
-        for name in OUTPUT_FILES:
+        (stage / "report.json").write_text(
+            json.dumps(report, ensure_ascii=False, allow_nan=False, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        asset_files = stage_viewer(stage)
+        for name in (*OUTPUT_FILES, *asset_files):
             if not (stage / name).is_file() or (stage / name).stat().st_size == 0:
                 raise ValueError(f"required output is missing or empty: {name}")
         timings["staged_outputs_seconds"] = time.perf_counter() - checkpoint
@@ -131,11 +135,12 @@ def run_pipeline(data_dir: Path, out_dir: Path) -> dict:
                 "edge_count": len(report["edges"]),
                 "cluster_count": len(report["clusters"]),
                 "top_count": len(report["top_nodes"]),
+                "viewer_asset_count": len(asset_files),
                 "sum_tiyn_internal": clusters.attrs["sum_tiyn_internal_total"],
                 "sum_tiyn_intercluster": clusters.attrs["sum_tiyn_intercluster_total"],
                 "sum_tiyn_total": clusters.attrs["sum_tiyn_total"],
             },
-            "output_sha256": {name: _sha256(stage / name) for name in OUTPUT_FILES},
+            "output_sha256": {name: _sha256(stage / name) for name in (*OUTPUT_FILES, *asset_files)},
         }
         (stage / "validation.json").write_text(
             json.dumps(validation, ensure_ascii=False, allow_nan=False, indent=2) + "\n",
@@ -146,8 +151,12 @@ def run_pipeline(data_dir: Path, out_dir: Path) -> dict:
         previous = out_dir / "validation.json"
         if previous.exists():
             previous.replace(out_dir / f"validation.previous.{uuid.uuid4().hex}.json")
+        previous_assets = out_dir / "assets"
+        if previous_assets.exists():
+            previous_assets.replace(out_dir / f"assets.previous.{uuid.uuid4().hex}")
         for name in OUTPUT_FILES:
             (stage / name).replace(out_dir / name)
+        (stage / "assets").replace(out_dir / "assets")
         (stage / "validation.json").replace(out_dir / "validation.json")
         stage.rmdir()
         print(f"Validated release: {out_dir} ({len(report['nodes'])} nodes, {len(report['clusters'])} clusters)")

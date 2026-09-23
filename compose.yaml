@@ -15,3 +15,12 @@ services:
       - ./data:/app/data:ro
       - ./out:/app/out
     command: ["--data", "/app/data", "--out", "/app/out"]
+
+  viewer:
+    image: ${HACKALEM_IMAGE:-jigas-graph-money:local}
+    entrypoint: ["python", "-m", "http.server"]
+    command: ["8000", "--bind", "0.0.0.0", "--directory", "/app/out"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./out:/app/out:ro

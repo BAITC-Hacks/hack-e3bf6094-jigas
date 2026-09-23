@@ -1,7 +1,34 @@
-"""Embed the report and local assets into offline HTML."""
+"""Stage a built viewer; retain the legacy standalone renderer as a facade."""
 
 import json
 from pathlib import Path
+import shutil
+
+
+def stage_viewer(stage: Path) -> tuple[str, ...]:
+    """Copy the prebuilt React viewer into a release staging directory."""
+    root = Path(__file__).resolve().parents[1]
+    build = root / "frontend" / "dist"
+    page = build / "report.html"
+    asset_dir = build / "assets"
+    if not page.is_file() or not asset_dir.is_dir():
+        raise ValueError("frontend build is missing; run npm --prefix frontend run build")
+    if page.stat().st_size == 0:
+        raise ValueError("frontend build report.html is empty")
+
+    files = [path for path in sorted(asset_dir.rglob("*")) if path.is_file()]
+    if not files or any(path.is_symlink() or path.stat().st_size == 0 for path in files):
+        raise ValueError("frontend build assets are missing or invalid")
+    if (stage / "assets").exists():
+        raise ValueError("release staging assets already exist")
+
+    shutil.copy2(page, stage / "report.html")
+    shutil.copytree(asset_dir, stage / "assets")
+    license_path = root / "assets" / "vis-network.LICENSE.txt"
+    if not license_path.is_file():
+        raise ValueError("vis-network license is missing")
+    shutil.copy2(license_path, stage / "assets" / license_path.name)
+    return tuple(str(path.relative_to(stage)).replace("\\", "/") for path in sorted((stage / "assets").rglob("*")) if path.is_file())
 
 def render_report(report: dict, out_path: Path) -> None:
     """Embed the report and local assets into a standalone offline HTML file."""
