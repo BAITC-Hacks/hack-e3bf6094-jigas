@@ -70,6 +70,7 @@ def summarize_clusters(G: nx.DiGraph, df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"cluster summary is missing required features: {', '.join(missing)}")
 
     cluster_by_gid = {int(row.gid): int(row.cluster_id) for row in df[required].itertuples(index=False)}
+    role_by_gid = {int(row.gid): str(row.role) for row in df[["gid", "role"]].itertuples(index=False)}
     graph_ids = {int(gid) for gid in G.nodes}
     if set(cluster_by_gid) != graph_ids:
         raise ValueError("cluster assignments must cover exactly the graph nodes")
@@ -106,12 +107,16 @@ def summarize_clusters(G: nx.DiGraph, df: pd.DataFrame) -> pd.DataFrame:
         volume_tiyn = internal_tiyn.get(cluster_id, 0)
         internal_edge_count = internal_edges.get(cluster_id, 0)
         top_gids = [int(gid) for gid in ranked.loc[ranked["cluster_id"] == cluster_id, "gid"].head(5)]
+        first_gid = top_gids[0]
+        incoming = list(G.in_edges(first_gid, data=True))
+        outgoing = list(G.out_edges(first_gid, data=True))
+        is_isolate = n_nodes == 1 and not incoming and not outgoing
         role_counts = members["role"].value_counts().sort_index().sort_values(ascending=False, kind="mergesort")
         leading_roles = ", ".join(
             f"{role}={int(count)}" for role, count in role_counts.head(2).items()
         ) or "нет назначенных ролей"
 
-        if n_nodes == 1 and internal_edge_count == 0 and volume_tiyn == 0:
+        if is_isolate:
             if n_seed:
                 hypothesis = (
                     "Один узел (seed) без внутренних рёбер; внутренний оборот 0.00 KZT. "
@@ -133,6 +138,15 @@ def summarize_clusters(G: nx.DiGraph, df: pd.DataFrame) -> pd.DataFrame:
                 f"Группа: {n_nodes} узлов, 0 seed, {internal_edge_count} внутренних рёбер, "
                 f"{_format_kzt(volume_tiyn)} KZT; частые роли: {leading_roles}. "
                 "Отсутствие seed не означает безопасность."
+            )
+
+        if not is_isolate:
+            in_tiyn = sum(int(data["sum_tiyn"]) for _, _, data in incoming)
+            out_tiyn = sum(int(data["sum_tiyn"]) for _, _, data in outgoing)
+            hypothesis += (
+                f" Первый для проверки по P: {first_gid}, роль {role_by_gid[first_gid]}; "
+                f"{len(incoming)} плательщиков, {len(outgoing)} получателей; "
+                f"вход {_format_kzt(in_tiyn)} KZT, выход {_format_kzt(out_tiyn)} KZT."
             )
 
         records.append({
