@@ -1,0 +1,301 @@
+"""Assign explainable roles and a review priority."""
+
+import numpy as np
+import pandas as pd
+
+ROLES = ["coordinator", "distributor", "consolidator", "transit", "terminal", "peripheral"]
+
+def assign_roles(df: pd.DataFrame):
+    """Apply the documented role rules and return their concrete parameters."""
+    required = [
+        "seed_reach_count", "betweenness", "in_deg", "out_deg", "in_tiyn",
+        "out_tiyn", "pass_through", "depth", "is_seed", "days_after_last_in",
+    ]
+    missing = [column for column in required if column not in df.columns]
+    if missing:
+        raise ValueError(f"role assignment is missing required features: {', '.join(missing)}")
+
+    positive_b = pd.to_numeric(df["betweenness"], errors="coerce")
+    positive_b = positive_b[np.isfinite(positive_b) & positive_b.gt(0)]
+    q90_positive = (
+        float(np.quantile(positive_b.to_numpy(dtype=np.float64), 0.90, method="linear"))
+        if len(positive_b)
+        else None
+    )
+
+    caps = {
+        "coordinator": 0.60,
+        "distributor": 0.90,
+        "consolidator": 0.90,
+        "transit": 0.65,
+        "terminal": 0.50,
+    }
+    role_parameters = {
+        "precedence": list(ROLES),
+        "quantile_method": "linear",
+        "coordinator": {
+            "seed_reach_count_min": 2,
+            "in_deg_min": 2,
+            "out_deg_min": 2,
+            "betweenness_positive_quantile": 0.90,
+            "betweenness_threshold": q90_positive,
+            "support_cap": caps["coordinator"],
+            "u": "min(1, seed_reach_count / 4)",
+        },
+        "distributor": {
+            "out_deg_min": 10,
+            "support_cap": caps["distributor"],
+            "u": "min(1, out_deg / 20)",
+        },
+        "consolidator": {
+            "in_deg_min": 3,
+            "support_cap": caps["consolidator"],
+            "u": "min(1, in_deg / 6)",
+        },
+        "transit": {
+            "is_seed": False,
+            "depth_max_exclusive": 4,
+            "pass_through_min": 0.8,
+            "pass_through_max": 1.2,
+            "support_cap": caps["transit"],
+            "u": "max(0, 1 - abs(pass_through - 1) / 0.2)",
+        },
+        "terminal": {
+            "is_seed": False,
+            "depth_max_exclusive": 4,
+            "in_tiyn_min_exclusive": 0,
+            "out_deg": 0,
+            "days_after_last_in_min": 2,
+            "support_cap": caps["terminal"],
+            "u": "min(1, days_after_last_in / 7)",
+        },
+        "support_formula": "cap * (0.5 + 0.5 * u)",
+    }
+
+    primary_roles = []
+    role_scores = []
+    all_matches = []
+
+    def add_match(matches, role, u):
+        support = caps[role] * (0.5 + 0.5 * min(1.0, max(0.0, float(u))))
+        matches.append({"role": role, "support": float(support)})
+
+    for row in df.itertuples(index=False):
+        matches = []
+        seed_reach = int(row.seed_reach_count)
+        betweenness = float(row.betweenness) if pd.notna(row.betweenness) else np.nan
+        in_deg = int(row.in_deg)
+        out_deg = int(row.out_deg)
+        in_tiyn = int(row.in_tiyn)
+        out_tiyn = int(row.out_tiyn)
+        depth = int(row.depth)
+        is_seed = bool(row.is_seed)
+
+        if (
+            q90_positive is not None
+            and seed_reach >= 2
+            and in_deg >= 2
+            and out_deg >= 2
+            and np.isfinite(betweenness)
+            and betweenness > 0
+            and betweenness >= q90_positive
+        ):
+            add_match(matches, "coordinator", min(1.0, seed_reach / 4.0))
+
+        if out_deg >= 10:
+            add_match(matches, "distributor", min(1.0, out_deg / 20.0))
+
+        if in_deg >= 3:
+            add_match(matches, "consolidator", min(1.0, in_deg / 6.0))
+
+        ratio = row.pass_through
+        if (
+            not is_seed
+            and depth < 4
+            and in_tiyn > 0
+            and out_tiyn > 0
+            and pd.notna(ratio)
+            and np.isfinite(float(ratio))
+            and 0.8 <= float(ratio) <= 1.2
+        ):
+            u = max(0.0, 1.0 - abs(float(ratio) - 1.0) / 0.2)
+            add_match(matches, "transit", u)
+
+        days_after = row.days_after_last_in
+        if (
+            not is_seed
+            and depth < 4
+            and in_tiyn > 0
+            and out_deg == 0
+            and pd.notna(days_after)
+            and int(days_after) >= 2
+        ):
+            add_match(matches, "terminal", min(1.0, int(days_after) / 7.0))
+
+        if matches:
+            primary_roles.append(matches[0]["role"])
+            role_scores.append(matches[0]["support"])
+            all_matches.append(matches)
+        else:
+            primary_roles.append("peripheral")
+            role_scores.append(0.0)
+            all_matches.append([])
+
+    result = df.copy()
+    result["role"] = primary_roles
+    result["role_score"] = np.asarray(role_scores, dtype=np.float64)
+    result["matched_roles"] = all_matches
+    return result, role_parameters
+
+
+def compute_priority(df: pd.DataFrame):
+    """Score nodes from normalized role, volume, reach, and betweenness signals."""
+    required = [
+        "gid", "role", "role_score", "matched_roles", "in_tiyn", "out_tiyn",
+        "seed_reach_count", "betweenness", "boundary", "isolated", "is_seed",
+    ]
+    missing = [column for column in required if column not in df.columns]
+    if missing:
+        raise ValueError(f"priority calculation is missing required features: {', '.join(missing)}")
+
+    weights = {"M": 0.35, "A": 0.30, "C": 0.20, "H": 0.15}
+    volumes_kzt = np.asarray(
+        [(int(in_tiyn) + int(out_tiyn)) / 100.0 for in_tiyn, out_tiyn in zip(df["in_tiyn"], df["out_tiyn"])],
+        dtype=np.float64,
+    )
+    if not np.isfinite(volumes_kzt).all() or (volumes_kzt < 0).any():
+        raise ValueError("node volumes must be finite and non-negative")
+
+    positive_volumes = volumes_kzt[volumes_kzt > 0]
+    q95_volume_kzt = (
+        float(np.quantile(positive_volumes, 0.95, method="linear"))
+        if len(positive_volumes)
+        else None
+    )
+    betweenness_values = pd.to_numeric(df["betweenness"], errors="coerce").to_numpy(dtype=np.float64)
+    if not np.isfinite(betweenness_values).all() or (betweenness_values < 0).any():
+        raise ValueError("betweenness must contain finite non-negative values")
+    positive_betweenness = betweenness_values[betweenness_values > 0]
+    q95_betweenness = (
+        float(np.quantile(positive_betweenness, 0.95, method="linear"))
+        if len(positive_betweenness)
+        else None
+    )
+
+    role_strength = []
+    for matches in df["matched_roles"]:
+        supports = []
+        for match in matches or []:
+            support = float(match["support"])
+            if not np.isfinite(support) or not 0 <= support <= 1:
+                raise ValueError("matched role support must be finite and within [0, 1]")
+            supports.append(support)
+        role_strength.append(max(supports, default=0.0))
+    M = np.asarray(role_strength, dtype=np.float64)
+
+    if q95_volume_kzt is None or q95_volume_kzt <= 0:
+        A = np.zeros(len(df), dtype=np.float64)
+    else:
+        denominator = float(np.log1p(q95_volume_kzt))
+        A = np.clip(np.log1p(volumes_kzt) / denominator, 0.0, 1.0)
+
+    reach = pd.to_numeric(df["seed_reach_count"], errors="raise").to_numpy(dtype=np.float64)
+    if not np.isfinite(reach).all() or (reach < 0).any():
+        raise ValueError("seed_reach_count must contain finite non-negative values")
+    C = np.clip(reach / 5.0, 0.0, 1.0)
+
+    if q95_betweenness is None or q95_betweenness <= 0:
+        H = np.zeros(len(df), dtype=np.float64)
+    else:
+        H = np.clip(betweenness_values / q95_betweenness, 0.0, 1.0)
+
+    components = {"M": M, "A": A, "C": C, "H": H}
+    priority = np.clip(
+        weights["M"] * M + weights["A"] * A + weights["C"] * C + weights["H"] * H,
+        0.0,
+        1.0,
+    )
+
+    component_labels = {
+        "M": "поддержка роли",
+        "A": "наблюдаемый объём",
+        "C": "охват seed",
+        "H": "посредническая центральность",
+    }
+    evidence = []
+    why = []
+    component_rows = []
+    for position, row in enumerate(df.itertuples(index=False)):
+        values = {key: float(components[key][position]) for key in ("M", "A", "C", "H")}
+        component_rows.append(values)
+        gid = int(row.gid)
+        volume = float(volumes_kzt[position])
+        reach_count = int(row.seed_reach_count)
+        betweenness = float(betweenness_values[position])
+
+        if bool(row.boundary):
+            limitation = "граф заканчивается на depth=4"
+        elif bool(row.isolated):
+            limitation = "нет наблюдаемых рёбер"
+        elif bool(row.is_seed):
+            limitation = "входящие связи seed могут быть неполными"
+        elif reach_count == 0:
+            limitation = "seed не достигнут за 1–4 шага"
+        else:
+            limitation = "учтены только наблюдаемые переводы"
+
+        evidence_text = (
+            f"{row.role}; P={priority[position]:.3f}; M={values['M']:.3f}, "
+            f"A={values['A']:.3f}, C={values['C']:.3f}, H={values['H']:.3f}; "
+            f"V={volume:.2f} KZT, S={reach_count}, B={betweenness:.4g}. "
+            f"Ограничение: {limitation}."
+        )
+        if len(evidence_text) > 200:
+            raise ValueError(f"evidence for gid {gid} exceeds 200 characters")
+        evidence.append(evidence_text)
+
+        if priority[position] == 0:
+            why_text = f"P=0: M=A=C=H=0. Ограничение: {limitation}."
+        else:
+            contributions = sorted(
+                ((weights[key] * values[key], key) for key in ("M", "A", "C", "H")),
+                key=lambda item: (-item[0], ("M", "A", "C", "H").index(item[1])),
+            )[:2]
+            first, second = contributions
+            why_text = (
+                f"P={priority[position]:.3f}; вклад: {component_labels[first[1]]}={first[0]:.3f}, "
+                f"{component_labels[second[1]]}={second[0]:.3f}. Ограничение: {limitation}."
+            )
+        why.append(why_text)
+
+    result = df.copy()
+    result["priority_score"] = priority
+    result["score_components"] = component_rows
+    result["evidence"] = evidence
+    result["why"] = why
+    result = result.sort_values(
+        ["priority_score", "gid"],
+        ascending=[False, True],
+        kind="mergesort",
+    ).reset_index(drop=True)
+
+    priority_parameters = {
+        "rule_version": "1.0",
+        "weights": weights,
+        "volume_definition": "(in_tiyn + out_tiyn) / 100, in KZT",
+        "volume_quantile": 0.95,
+        "volume_quantile_method": "linear",
+        "volume_q95_kzt": q95_volume_kzt,
+        "component_formulas": {
+            "M": "max(matched_roles.support), or 0 when there are no matches",
+            "A": "min(1, log1p(V_kzt) / log1p(Q95(V_kzt > 0)))",
+            "C": "min(1, seed_reach_count / 5)",
+            "H": "min(1, betweenness / Q95(betweenness > 0))",
+        },
+        "betweenness_quantile": 0.95,
+        "betweenness_quantile_method": "linear",
+        "betweenness_q95_positive": q95_betweenness,
+        "priority_formula": "0.35*M + 0.30*A + 0.20*C + 0.15*H",
+        "sort_order": ["priority_score desc (unrounded)", "numeric gid asc"],
+    }
+    return result, priority_parameters
