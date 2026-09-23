@@ -222,11 +222,30 @@ def test_graph_features_and_report(starter: Any) -> None:
     prioritized = prioritized.copy()
     prioritized["cluster_id"] = prioritized["gid"].map(cluster_map)
     summaries = starter.summarize_clusters(graph, prioritized)
+    sample_total_tiyn = int(edges["sum_tiyn"].sum())
+    require(sample_total_tiyn == 4_900_000,
+            f"synthetic fixture turnover changed: expected 4900000 tiyn, got {sample_total_tiyn}")
+    metadata = {
+        "period_start": "2026-07-01",
+        "period_end": "2026-07-31",
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+        "transaction_count": len(tx),
+        "sum_tiyn": sample_total_tiyn,
+        # These format-valid digests are metadata fixtures, not hashes of the sample frames.
+        "sha256_files": {
+            "nodes.parquet": "0" * 64,
+            "edges.parquet": "1" * 64,
+            "transactions.parquet": "a" * 64,
+        },
+    }
     report = starter.build_report(
-        prioritized, edges, summaries, metadata={}, parameters={}
+        prioritized, edges, summaries, metadata=metadata, parameters={}
     )
     require(isinstance(report, dict), "build_report must return a JSON-compatible dict")
     require(report.get("schema_version") == "1.0", "report schema_version must be '1.0'")
+    require(report.get("dataset") == metadata,
+            "build_report must preserve validated period, counts, turnover, and source hashes")
     nodes_json = report.get("nodes", [])
     try:
         json.dumps(report, allow_nan=False)
