@@ -6,7 +6,7 @@
 
 ## Требования
 
-- Docker Desktop с Docker Compose — рекомендуемый способ запустить проект без установки Python на хосте.
+- Docker Engine и Docker Compose v2 на Linux либо Docker Desktop с Docker Compose на Windows/macOS — рекомендуемый способ запустить проект без установки Python на хосте.
 - Для локального запуска без Docker — Python 3.13.
 - Официальный архив входа находится в `track_data/data (1).zip` и уже включён в репозиторий. Подготовленные Parquet хранятся в игнорируемой `data/` и не попадают в Git.
 
