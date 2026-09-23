@@ -36,13 +36,12 @@
 
 | Область | Владелец сейчас | Другим чатам |
 |---|---|---|
-| `frontend/` и React HA-15.1/15.2 ([экран](https://trello.com/c/Rnk792mE), [граф](https://trello.com/c/kpeqbuVO)) | UI-агент этого потока | Не править до handoff |
-| `hackalem/pipeline.py`, `hackalem/html.py`, `Dockerfile`, `compose.yaml` и [React выпуск](https://trello.com/c/TOLPtvoW) | Интегратор этого потока | Не править до handoff |
-| `hackalem/scoring.py`, `hackalem/report.py` и [HA-17.1: объяснения ролей](https://trello.com/c/tIzQHdJ0) | Analytics-агент этого потока | Не править до handoff |
-| `test_contract.py`, `README.md`, `docs/validation.md` | Verification-агент этого потока | Не править до handoff |
+| `frontend/`, `hackalem/pipeline.py`, `hackalem/html.py`, `hackalem/scoring.py`, `hackalem/report.py`, Dockerfile, compose | Интегрированы в `main` после review и Docker/browser проверки | Новые функции после freeze не начинать; дефекты брать через отдельную карточку |
+| `test_contract.py` и HA-08.1 | Агент `/root/ha08_contract` дополняет проверку HA-18 | Не править параллельно до handoff |
+| `README.md`, `docs/validation.md` | Интегратор этого потока | Документальные исправления передавать через отдельный handoff |
 | `docs/SECOND_WAVE_RESEARCH.md`, `research/second_wave*`, обновляемые SPEC/PLAN | Параллельный исследовательский поток | Не править до handoff |
 
-Старый автономный HTML остаётся резервным проверенным P0 до приёмки React. P1 UI ждёт React; до заморозки функций **16:30 по Астане** берите новую задачу только если её можно закончить и передать на review. Дедлайн сдачи — **18:00 по Астане**.
+React-выпуск включён в `main` и прошёл пять Docker прогонов, контрактный тест и локальный Playwright smoke; текущий SHA всегда проверяйте через `git fetch origin`. Заморозка новых функций наступила **16:30 по Астане**: до сдачи в 18:00 берите только проверки, исправления дефектов, документацию и демо. Живые статусы — в Trello; раздел выше фиксирует текущие владения файлами.
 
 ## Docker в нескольких worktree
 
@@ -61,11 +60,11 @@ docker compose run --rm pipeline
 ## Промпт для отдельного чата
 
 ```text
-Работаем в G:\HACKATON\hack-e3bf6094-jigas. Цель — ускорить HackAlem AI до дедлайна 23.09.2026 18:00 по Астане. Прочитай docs/PARALLEL_WORK.md, актуальные docs/SPEC.md / PRODUCT_SPEC.md / PLAN.md, HA-CTX и Trello https://trello.com/b/6tCEnwZQ/hackathon; сначала git fetch origin. Контракт SPEC 1.4 / PRODUCT_SPEC 1.3 / PLAN 1.3 включён в origin/main@2e53d60; проверь текущий HEAD. Задачи и исследование меняются параллельно. Номера согласованы: HA-15 — React, HA-17 — объяснения, HA-16 — маршруты; идентифицируй задачу по полной URL.
+Работаем в G:\HACKATON\hack-e3bf6094-jigas. Цель — подготовить HackAlem AI к сдаче 23.09.2026 18:00 по Астане. Сначала git fetch origin, затем прочитай актуальные docs/PARALLEL_WORK.md, SPEC.md, PRODUCT_SPEC.md, PLAN.md и Trello https://trello.com/b/6tCEnwZQ/hackathon. Проверь текущий origin/main: React-выпуск и HA-17/HA-18 уже интегрированы, новые функции после freeze 16:30 не начинай. Задачи и исследования обновляются параллельно; идентифицируй задачу по полной URL.
 
-Выбери одну доступную незанятую карточку из текущего backlog с независимыми файлами и реальным результатом до freeze 16:30 либо независимый review карточки из «На проверке». Перечитай живой статус доски перед захватом: очередь меняется. Проверь стартовые зависимости и не начинай заблокированную функцию. Не бери frontend/, hackalem/pipeline.py, hackalem/html.py, scoring.py, report.py, test_contract.py, README.md и research/second_wave*, пока в docs/PARALLEL_WORK.md и Trello они закреплены за другими. Запиши в карточку ветку, base SHA, файлы и критерий; рабочую задачу перемести «В работе», но никого из участников не назначай.
+Выбери одну доступную незанятую карточку по проверке, исправлению дефекта, документации или демо либо независимый review карточки из «На проверке». Перечитай живой статус доски перед захватом: очередь меняется. Проверь зависимости и владение файлами в docs/PARALLEL_WORK.md и Trello; test_contract.py сейчас занят HA-08.1. Запиши в карточку ветку, base SHA, файлы и критерий; рабочую задачу перемести «В работе», но никого из участников не назначай.
 
 Создай отдельный git worktree и уникальную feature-ветку от origin/main. Если работа допускает параллельные независимые части, заспавни субагентов gpt-6-luna с reasoning_effort=max, каждому отдельный worktree и непересекающиеся файлы. Не пушь main: после проверки пушь свою ветку и оставь Trello handoff с commit URL, командами/результатами тестов, рисками и следующим получателем; готовность — «На проверке» до независимого review. Каждые 20–30 минут обновляй статус. Если новые SPEC/Trello заменили задачу, останови устаревшую реализацию и передай состояние.
 
-Для Docker используй уникальный HACKALEM_IMAGE на worktree, HACKALEM_CPUS так, чтобы одновременные запуски вместе укладывались в 12 CPU. После каждой успешной сборки запускай обязательный Docker-Cleanup.ps1 -Automatic, не трогай volumes. До 16:30 — только законченные изменения с review; далее тесты, исправления и демо. В конце дай мне ссылку на ветку и карточку для интеграции в основной поток.
+Для Docker используй уникальный HACKALEM_IMAGE на worktree, HACKALEM_CPUS так, чтобы одновременные запуски вместе укладывались в 12 CPU. После каждой успешной сборки запускай обязательный Docker-Cleanup.ps1 -Automatic, не трогай volumes. В конце дай мне ссылку на ветку и карточку для интеграции в основной поток.
 ```
