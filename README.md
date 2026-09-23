@@ -35,7 +35,7 @@ docker compose run --rm --entrypoint python pipeline test_contract.py --data /ap
 ```powershell
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-python scripts/prepare_data.py
+.\.venv\Scripts\python.exe scripts/prepare_data.py
 .\.venv\Scripts\python.exe starter.py --data .\data --out .\out
 .\.venv\Scripts\python.exe test_contract.py --data .\data --out .\out
 ```
@@ -45,7 +45,7 @@ python scripts/prepare_data.py
 ```bash
 python3.13 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-python scripts/prepare_data.py
+.venv/bin/python scripts/prepare_data.py
 .venv/bin/python starter.py --data ./data --out ./out
 .venv/bin/python test_contract.py --data ./data --out ./out
 ```
