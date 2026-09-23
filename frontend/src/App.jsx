@@ -514,7 +514,7 @@ export default function App() {
               <span className={searchMessage.includes('не найден') || searchMessage.includes('Введите') ? 'search-error' : 'search-success'} role={searchMessage.includes('не найден') || searchMessage.includes('Введите') ? 'alert' : 'status'}>{searchMessage || 'ID сравнивается как строка без округления.'}</span>
             </form>
           </section>
-          <nav className="workspace-nav" aria-label="Разделы анализа"><a href="#detail-title">Карточка</a><a href="#graph-title">Связи</a><a href="#top-title">Клиенты</a></nav>
+          <nav className="workspace-nav" aria-label="Разделы анализа"><a href="#detail-title">Карточка</a><a href="#graph-title">Связи</a><a href="#top-title">Клиенты</a><a href="#community-title">Структура</a></nav>
           <section className="analysis-workspace" aria-label="Рабочая область анализа">
             <TopNodes topNodes={filteredTopNodes} allNodes={report.nodes} boundaryGids={report.boundary_gids_by_inflow} nodeIndex={nodeIndex} topRankByGid={topRankByGid} parameters={report.parameters} filters={filters} selectedGid={selectedGid} onSelect={selectAndReveal} />
             <GraphView report={report} selectedGid={selectedGid} onSelectGid={selectFromGraph} filters={filters} onFiltersChange={setFilters} routeSteps={routeMode && report.seed_routes_by_gid?.[selectedGid]?.[routeMode]?.steps} sccFocusId={sccFocusId} onClearScc={() => setSccFocusId(null)} />
