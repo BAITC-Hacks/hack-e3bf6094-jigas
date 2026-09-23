@@ -63,6 +63,13 @@ def close(actual: Any, expected: float, message: str, *, abs_tol: float = 1e-10)
             f"{message}: expected {expected}, got {value}")
 
 
+def close_json_score(actual: Any, expected: float, message: str) -> None:
+    require(isinstance(actual, (int, float)) and not isinstance(actual, bool),
+            f"{message}: JSON score must be a number")
+    require(math.isfinite(actual), f"{message}: JSON score must be finite")
+    close(actual, expected, message)
+
+
 def frame_record(frame: pd.DataFrame, gid: int) -> dict[str, Any]:
     require("gid" in frame.columns, "result is missing gid")
     matches = frame.loc[frame["gid"].map(int) == gid]
@@ -575,6 +582,25 @@ def test_release_json_compatibility(starter: Any) -> None:
         )
         validate_csv_release(data_dir, out_dir)
 
+        # Keep the score equal to the CSV value so only its JSON type can fail.
+        malformed_report = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+        malformed_report["nodes"][0]["role_score"] = str(malformed_report["nodes"][0]["role_score"])
+        malformed_text = json.dumps(malformed_report, ensure_ascii=False, allow_nan=False) + "\n"
+        (out_dir / "report.json").write_text(malformed_text, encoding="utf-8")
+        validation["output_sha256"]["report.json"] = hashlib.sha256(
+            (out_dir / "report.json").read_bytes()
+        ).hexdigest()
+        (out_dir / "validation.json").write_text(
+            json.dumps(validation, ensure_ascii=False, allow_nan=False), encoding="utf-8",
+        )
+        try:
+            validate_csv_release(data_dir, out_dir)
+        except ContractFailure as exc:
+            require("role_score" in str(exc) and "JSON score must be a number" in str(exc),
+                    f"synthetic string role_score failed for the wrong reason: {exc}")
+        else:
+            raise ContractFailure("synthetic string role_score was accepted")
+
 
 def linear_quantile(values: list[float], q: float) -> float:
     """Small independent implementation of the SPEC's linear quantile rule."""
@@ -1029,10 +1055,10 @@ def validate_report_release(
                 f"gid={gid}: report cluster differs from nodes_roles.csv")
         require(node.get("evidence") == str(csv_row.evidence),
                 f"gid={gid}: report evidence differs from nodes_roles.csv")
-        close(node.get("role_score"), float(csv_row.role_score),
-              f"gid={gid}: report role_score differs from nodes_roles.csv")
-        close(node.get("priority_score"), float(csv_row.priority_score),
-              f"gid={gid}: report priority_score differs from nodes_roles.csv")
+        close_json_score(node.get("role_score"), float(csv_row.role_score),
+                         f"gid={gid}: report role_score differs from nodes_roles.csv")
+        close_json_score(node.get("priority_score"), float(csv_row.priority_score),
+                         f"gid={gid}: report priority_score differs from nodes_roles.csv")
 
     expected_edges = {}
     for row in raw_edges.itertuples(index=False):
@@ -1094,8 +1120,8 @@ def validate_report_release(
                 f"report.json top_nodes[{index}] rank/gid differs from top_nodes.csv")
         require(record.get("role") == str(csv_row.role) and record.get("why") == str(csv_row.why),
                 f"gid={gid}: report top role/why differs from top_nodes.csv")
-        close(record.get("priority_score"), float(csv_row.priority_score),
-              f"gid={gid}: report top priority differs from top_nodes.csv")
+        close_json_score(record.get("priority_score"), float(csv_row.priority_score),
+                         f"gid={gid}: report top priority differs from top_nodes.csv")
 
     validate_p1_daily_profiles(report, nodes_by_gid, raw_nodes, raw_tx)
     validate_release_assets(out_dir, validation)
