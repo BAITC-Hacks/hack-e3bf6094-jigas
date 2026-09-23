@@ -4,6 +4,36 @@ import numpy as np
 import pandas as pd
 
 ROLES = ["coordinator", "distributor", "consolidator", "transit", "terminal", "peripheral"]
+ROLE_EVIDENCE_CAVEATS = {
+    "coordinator": "гипотеза структурной координации",
+    "distributor": "цель переводов неизвестна",
+    "consolidator": "общность контроля не установлена",
+    "transit": "баланс неполон, происхождение неизвестно",
+    "terminal": "наблюдается только период и фрагмент",
+}
+
+
+def _display_number(value) -> str:
+    """Format a finite number compactly while keeping small values visible."""
+    if value is None or pd.isna(value):
+        return "—"
+    number = float(value)
+    if not np.isfinite(number):
+        return "—"
+    return format(number, ".8g")
+
+
+def _limitation(row) -> str:
+    if bool(row.boundary):
+        return "depth=4: исходящие не наблюдались"
+    if bool(row.isolated):
+        return "нет наблюдаемых рёбер"
+    if bool(row.is_seed):
+        return "входящие связи seed могут быть неполными"
+    if int(row.seed_reach_count) == 0:
+        return "seed не достигнут за 1–4 шага"
+    return "учтены только наблюдаемые переводы"
+
 
 def assign_roles(df: pd.DataFrame):
     """Apply the documented role rules and return their concrete parameters."""
@@ -31,6 +61,8 @@ def assign_roles(df: pd.DataFrame):
         "terminal": 0.50,
     }
     role_parameters = {
+        "explanation_version": "1.0",
+        "matched_role_fields": ["role", "support", "reason"],
         "precedence": list(ROLES),
         "quantile_method": "linear",
         "coordinator": {
@@ -76,9 +108,9 @@ def assign_roles(df: pd.DataFrame):
     role_scores = []
     all_matches = []
 
-    def add_match(matches, role, u):
+    def add_match(matches, role, u, reason):
         support = caps[role] * (0.5 + 0.5 * min(1.0, max(0.0, float(u))))
-        matches.append({"role": role, "support": float(support)})
+        matches.append({"role": role, "support": float(support), "reason": reason})
 
     for row in df.itertuples(index=False):
         matches = []
@@ -100,13 +132,27 @@ def assign_roles(df: pd.DataFrame):
             and betweenness > 0
             and betweenness >= q90_positive
         ):
-            add_match(matches, "coordinator", min(1.0, seed_reach / 4.0))
+            reason = (
+                f"S={seed_reach}≥2; in_deg={in_deg}≥2; out_deg={out_deg}≥2; "
+                f"B={_display_number(betweenness)}>0 и ≥Q90={_display_number(q90_positive)}"
+            )
+            add_match(matches, "coordinator", min(1.0, seed_reach / 4.0), reason)
 
         if out_deg >= 10:
-            add_match(matches, "distributor", min(1.0, out_deg / 20.0))
+            add_match(
+                matches,
+                "distributor",
+                min(1.0, out_deg / 20.0),
+                f"out_deg={out_deg}≥10",
+            )
 
         if in_deg >= 3:
-            add_match(matches, "consolidator", min(1.0, in_deg / 6.0))
+            add_match(
+                matches,
+                "consolidator",
+                min(1.0, in_deg / 6.0),
+                f"in_deg={in_deg}≥3",
+            )
 
         ratio = row.pass_through
         if (
@@ -119,7 +165,11 @@ def assign_roles(df: pd.DataFrame):
             and 0.8 <= float(ratio) <= 1.2
         ):
             u = max(0.0, 1.0 - abs(float(ratio) - 1.0) / 0.2)
-            add_match(matches, "transit", u)
+            reason = (
+                f"seed=нет; depth={depth}<4; in_tiyn={in_tiyn}>0; out_tiyn={out_tiyn}>0; "
+                f"r={_display_number(ratio)}∈[0.8,1.2]"
+            )
+            add_match(matches, "transit", u, reason)
 
         days_after = row.days_after_last_in
         if (
@@ -130,7 +180,11 @@ def assign_roles(df: pd.DataFrame):
             and pd.notna(days_after)
             and int(days_after) >= 2
         ):
-            add_match(matches, "terminal", min(1.0, int(days_after) / 7.0))
+            days_after = int(days_after)
+            reason = (
+                f"seed=нет; depth={depth}<4; in_tiyn={in_tiyn}>0; out_deg=0; D={days_after}≥2"
+            )
+            add_match(matches, "terminal", min(1.0, days_after / 7.0), reason)
 
         if matches:
             primary_roles.append(matches[0]["role"])
@@ -183,6 +237,7 @@ def compute_priority(df: pd.DataFrame):
     )
 
     role_strength = []
+    max_support_matches = []
     for matches in df["matched_roles"]:
         supports = []
         for match in matches or []:
@@ -191,6 +246,9 @@ def compute_priority(df: pd.DataFrame):
                 raise ValueError("matched role support must be finite and within [0, 1]")
             supports.append(support)
         role_strength.append(max(supports, default=0.0))
+        max_support_matches.append(
+            max(matches, key=lambda match: float(match["support"])) if matches else None
+        )
     M = np.asarray(role_strength, dtype=np.float64)
 
     if q95_volume_kzt is None or q95_volume_kzt <= 0:
@@ -216,12 +274,6 @@ def compute_priority(df: pd.DataFrame):
         1.0,
     )
 
-    component_labels = {
-        "M": "поддержка роли",
-        "A": "наблюдаемый объём",
-        "C": "охват seed",
-        "H": "посредническая центральность",
-    }
     evidence = []
     why = []
     component_rows = []
@@ -232,40 +284,69 @@ def compute_priority(df: pd.DataFrame):
         volume = float(volumes_kzt[position])
         reach_count = int(row.seed_reach_count)
         betweenness = float(betweenness_values[position])
+        limitation = _limitation(row)
 
-        if bool(row.boundary):
-            limitation = "граф заканчивается на depth=4"
-        elif bool(row.isolated):
-            limitation = "нет наблюдаемых рёбер"
-        elif bool(row.is_seed):
-            limitation = "входящие связи seed могут быть неполными"
-        elif reach_count == 0:
-            limitation = "seed не достигнут за 1–4 шага"
+        if row.role == "peripheral":
+            out_deg = int(row.out_deg)
+            in_deg = int(row.in_deg)
+            in_volume = int(row.in_tiyn) / 100.0
+            out_volume = int(row.out_tiyn) / 100.0
+            evidence_text = (
+                f"Совпадений правил: 0; in_deg={in_deg}, out_deg={out_deg}; "
+                f"вход={in_volume:.2f}, выход={out_volume:.2f} KZT. "
+                f"Роль не установлена; безопасность не оценена. {limitation}."
+            )
         else:
-            limitation = "учтены только наблюдаемые переводы"
-
-        evidence_text = (
-            f"{row.role}; P={priority[position]:.3f}; M={values['M']:.3f}, "
-            f"A={values['A']:.3f}, C={values['C']:.3f}, H={values['H']:.3f}; "
-            f"V={volume:.2f} KZT, S={reach_count}, B={betweenness:.4g}. "
-            f"Ограничение: {limitation}."
-        )
+            primary_match = next(
+                (match for match in (row.matched_roles or []) if match["role"] == row.role),
+                None,
+            )
+            if primary_match is None:
+                raise ValueError(f"gid {gid} primary role is absent from matched_roles")
+            evidence_text = (
+                f"{row.role}: {primary_match['reason']}. {ROLE_EVIDENCE_CAVEATS[row.role]}. "
+                f"Ограничение: {limitation}."
+            )
         if len(evidence_text) > 200:
             raise ValueError(f"evidence for gid {gid} exceeds 200 characters")
         evidence.append(evidence_text)
 
-        if priority[position] == 0:
-            why_text = f"P=0: M=A=C=H=0. Ограничение: {limitation}."
-        else:
-            contributions = sorted(
-                ((weights[key] * values[key], key) for key in ("M", "A", "C", "H")),
-                key=lambda item: (-item[0], ("M", "A", "C", "H").index(item[1])),
-            )[:2]
-            first, second = contributions
-            why_text = (
-                f"P={priority[position]:.3f}; вклад: {component_labels[first[1]]}={first[0]:.3f}, "
-                f"{component_labels[second[1]]}={second[0]:.3f}. Ограничение: {limitation}."
+        max_match = max_support_matches[position]
+        support_role = max_match["role"] if max_match else "нет совпавших ролей"
+        support_value = float(max_match["support"]) if max_match else 0.0
+        primary_note = f"; основная={row.role}" if support_role != row.role else ""
+        q95_volume_text = _display_number(q95_volume_kzt)
+        q95_betweenness_text = _display_number(q95_betweenness)
+        component_details = {
+            "M": (
+                f"M={_display_number(values['M'])}, max support {support_role}="
+                f"{_display_number(support_value)}{primary_note}"
+            ),
+            "A": (
+                f"A={_display_number(values['A'])}, V={volume:.2f} KZT, "
+                f"Q95(V>0)={q95_volume_text} KZT"
+            ),
+            "C": f"C={_display_number(values['C'])}, S={reach_count}/5",
+            "H": (
+                f"H={_display_number(values['H'])}, B={_display_number(betweenness)}, "
+                f"Q95(B>0)={q95_betweenness_text}"
+            ),
+        }
+        contributions = sorted(
+            ((weights[key] * values[key], key) for key in ("M", "A", "C", "H")),
+            key=lambda item: (-item[0], ("M", "A", "C", "H").index(item[1])),
+        )[:2]
+        contribution_text = [
+            (
+                f"{component_details[key]}; вес={weights[key]:.2f}, "
+                f"вклад={weights[key] * values[key]:.6f}"
             )
+            for _weighted_value, key in contributions
+        ]
+        why_text = (
+            f"P={priority[position]:.6f}; ведущие вклады: {contribution_text[0]}; "
+            f"{contribution_text[1]}. Ограничение: {limitation}."
+        )
         why.append(why_text)
 
     result = df.copy()
@@ -281,6 +362,7 @@ def compute_priority(df: pd.DataFrame):
 
     priority_parameters = {
         "rule_version": "1.0",
+        "explanation_version": "1.0",
         "weights": weights,
         "volume_definition": "(in_tiyn + out_tiyn) / 100, in KZT",
         "volume_quantile": 0.95,

@@ -90,6 +90,27 @@ def build_report(
         values = row._asdict()
         gid = _exact_int(values["gid"], "nodes.gid")
         cluster_id = _exact_int(values["cluster_id"], f"nodes[{gid}].cluster_id")
+        matched_roles = values["matched_roles"]
+        if not isinstance(matched_roles, list):
+            raise ValueError(f"nodes[{gid}].matched_roles must be a list")
+        for match_position, match in enumerate(matched_roles):
+            if not isinstance(match, dict):
+                raise ValueError(f"nodes[{gid}].matched_roles[{match_position}] must be an object")
+            if not isinstance(match.get("role"), str) or not match["role"].strip():
+                raise ValueError(f"nodes[{gid}].matched_roles[{match_position}].role must not be empty")
+            support = match.get("support")
+            if isinstance(support, (bool, np.bool_)) or not isinstance(support, (int, float, np.integer, np.floating)):
+                raise ValueError(f"nodes[{gid}].matched_roles[{match_position}].support must be numeric")
+            if not np.isfinite(float(support)) or not 0 <= float(support) <= 1:
+                raise ValueError(f"nodes[{gid}].matched_roles[{match_position}].support must be within [0, 1]")
+            if not isinstance(match.get("reason"), str) or not match["reason"].strip():
+                raise ValueError(f"nodes[{gid}].matched_roles[{match_position}].reason must not be empty")
+        if values["role"] == "peripheral" and matched_roles:
+            raise ValueError(f"nodes[{gid}] peripheral role cannot have matched roles")
+        if values["role"] != "peripheral" and not any(
+            match["role"] == values["role"] for match in matched_roles
+        ):
+            raise ValueError(f"nodes[{gid}] primary role must appear in matched_roles")
         warnings = []
         if bool(values["boundary"]):
             warnings.append("boundary")
