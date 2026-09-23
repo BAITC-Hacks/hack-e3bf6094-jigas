@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 import networkx as nx
 
-ROLES = ["consolidator", "transit", "distributor", "terminal", "coordinator", "peripheral"]
+ROLES = ["coordinator", "distributor", "consolidator", "transit", "terminal", "peripheral"]
 
 
 # ---------------------------------------------------------------- загрузка
@@ -271,6 +271,149 @@ def enrich_features(G: nx.DiGraph, df: pd.DataFrame, tx: pd.DataFrame) -> pd.Dat
 
     print(f"Feature timings: seed_bfs={bfs_seconds:.3f}s, exact_betweenness={betweenness_seconds:.3f}s")
     return enriched
+
+
+def assign_roles(df: pd.DataFrame):
+    """Apply the documented role rules and return their concrete parameters."""
+    required = [
+        "seed_reach_count", "betweenness", "in_deg", "out_deg", "in_tiyn",
+        "out_tiyn", "pass_through", "depth", "is_seed", "days_after_last_in",
+    ]
+    missing = [column for column in required if column not in df.columns]
+    if missing:
+        raise ValueError(f"role assignment is missing required features: {', '.join(missing)}")
+
+    positive_b = pd.to_numeric(df["betweenness"], errors="coerce")
+    positive_b = positive_b[np.isfinite(positive_b) & positive_b.gt(0)]
+    q90_positive = (
+        float(np.quantile(positive_b.to_numpy(dtype=np.float64), 0.90, method="linear"))
+        if len(positive_b)
+        else None
+    )
+
+    caps = {
+        "coordinator": 0.60,
+        "distributor": 0.90,
+        "consolidator": 0.90,
+        "transit": 0.65,
+        "terminal": 0.50,
+    }
+    role_parameters = {
+        "precedence": list(ROLES),
+        "quantile_method": "linear",
+        "coordinator": {
+            "seed_reach_count_min": 2,
+            "in_deg_min": 2,
+            "out_deg_min": 2,
+            "betweenness_positive_quantile": 0.90,
+            "betweenness_threshold": q90_positive,
+            "support_cap": caps["coordinator"],
+            "u": "min(1, seed_reach_count / 4)",
+        },
+        "distributor": {
+            "out_deg_min": 10,
+            "support_cap": caps["distributor"],
+            "u": "min(1, out_deg / 20)",
+        },
+        "consolidator": {
+            "in_deg_min": 3,
+            "support_cap": caps["consolidator"],
+            "u": "min(1, in_deg / 6)",
+        },
+        "transit": {
+            "is_seed": False,
+            "depth_max_exclusive": 4,
+            "pass_through_min": 0.8,
+            "pass_through_max": 1.2,
+            "support_cap": caps["transit"],
+            "u": "max(0, 1 - abs(pass_through - 1) / 0.2)",
+        },
+        "terminal": {
+            "is_seed": False,
+            "depth_max_exclusive": 4,
+            "in_tiyn_min_exclusive": 0,
+            "out_deg": 0,
+            "days_after_last_in_min": 2,
+            "support_cap": caps["terminal"],
+            "u": "min(1, days_after_last_in / 7)",
+        },
+        "support_formula": "cap * (0.5 + 0.5 * u)",
+    }
+
+    primary_roles = []
+    role_scores = []
+    all_matches = []
+
+    def add_match(matches, role, u):
+        support = caps[role] * (0.5 + 0.5 * min(1.0, max(0.0, float(u))))
+        matches.append({"role": role, "support": float(support)})
+
+    for row in df.itertuples(index=False):
+        matches = []
+        seed_reach = int(row.seed_reach_count)
+        betweenness = float(row.betweenness) if pd.notna(row.betweenness) else np.nan
+        in_deg = int(row.in_deg)
+        out_deg = int(row.out_deg)
+        in_tiyn = int(row.in_tiyn)
+        out_tiyn = int(row.out_tiyn)
+        depth = int(row.depth)
+        is_seed = bool(row.is_seed)
+
+        if (
+            q90_positive is not None
+            and seed_reach >= 2
+            and in_deg >= 2
+            and out_deg >= 2
+            and np.isfinite(betweenness)
+            and betweenness > 0
+            and betweenness >= q90_positive
+        ):
+            add_match(matches, "coordinator", min(1.0, seed_reach / 4.0))
+
+        if out_deg >= 10:
+            add_match(matches, "distributor", min(1.0, out_deg / 20.0))
+
+        if in_deg >= 3:
+            add_match(matches, "consolidator", min(1.0, in_deg / 6.0))
+
+        ratio = row.pass_through
+        if (
+            not is_seed
+            and depth < 4
+            and in_tiyn > 0
+            and out_tiyn > 0
+            and pd.notna(ratio)
+            and np.isfinite(float(ratio))
+            and 0.8 <= float(ratio) <= 1.2
+        ):
+            u = max(0.0, 1.0 - abs(float(ratio) - 1.0) / 0.2)
+            add_match(matches, "transit", u)
+
+        days_after = row.days_after_last_in
+        if (
+            not is_seed
+            and depth < 4
+            and in_tiyn > 0
+            and out_deg == 0
+            and pd.notna(days_after)
+            and int(days_after) >= 2
+        ):
+            add_match(matches, "terminal", min(1.0, int(days_after) / 7.0))
+
+        if matches:
+            primary_roles.append(matches[0]["role"])
+            role_scores.append(matches[0]["support"])
+            all_matches.append(matches)
+        else:
+            primary_roles.append("peripheral")
+            role_scores.append(0.0)
+            all_matches.append([])
+
+    result = df.copy()
+    result["role"] = primary_roles
+    result["role_score"] = np.asarray(role_scores, dtype=np.float64)
+    result["matched_roles"] = all_matches
+    return result, role_parameters
 
 
 # ---------------------------------------------------------------- выгрузки
