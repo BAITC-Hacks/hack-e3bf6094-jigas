@@ -1,0 +1,208 @@
+{
+  "reviewed_remote_sha": "f14b8c4839a1f908e696d53858ada6db47420613",
+  "analysis_note": "Calls existing analytical functions; not a product release, benchmark, browser check, or acceptance test.",
+  "source_sha256": {
+    "hackalem/scoring.py": "4615e9cd007f72609de28f08abb7f05bed14e4226f5f334d530109fcb8672faf",
+    "hackalem/graph.py": "d919e5dfc509ee1a93b9d0879d3b101b9b5e70895e1494caffbb9a44e669bbfc",
+    "hackalem/clusters.py": "987ed7f1dab35fc6cef70168e47b3ce5a3436841b6bb07e6c25562dac7dcdb91"
+  },
+  "environment": {
+    "python": "3.13.3",
+    "pandas": "2.2.3",
+    "numpy": "2.2.6",
+    "networkx": "3.6.1",
+    "pyarrow": "25.0.1"
+  },
+  "input_sha256": {
+    "nodes": "d2a45b0df6e9352832d5fb09839d10b9e23f898156c3bab263b051b31cc0296d",
+    "edges": "4e71dde5cd3115bcb26e91202665532ee6581cf8233a9fc8059ea59fb7358a38",
+    "transactions": "c30c5317b5439591dde86f2058dc47a3d19b2900c055ded994fe547f6fb7e7da"
+  },
+  "dataset": {
+    "nodes": 2248,
+    "edges": 3119,
+    "transactions": 4840,
+    "total_tiyn": 36589001201
+  },
+  "roles": {
+    "peripheral": 1012,
+    "terminal": 947,
+    "consolidator": 158,
+    "transit": 55,
+    "coordinator": 43,
+    "distributor": 33
+  },
+  "terminal": {
+    "count": 947,
+    "share": 0.42126334519572955,
+    "score_0_5_count": 803,
+    "p75_positive_in_kzt": 166819.7,
+    "gate_or_keeps": 203,
+    "gate_or_changes_to_peripheral": 744,
+    "amount_gate_only_keeps": 164,
+    "payer_gate_only_keeps": 84,
+    "max_priority": 0.6607109776911617
+  },
+  "coordinator": {
+    "count": 43,
+    "positive_b_count": 599,
+    "q90": 0.00048324374418048645,
+    "b_above_q90_count": 60
+  },
+  "top20": {
+    "primary_roles": {
+      "coordinator": 18,
+      "distributor": 2
+    },
+    "matched_consolidator_count": 20,
+    "exact_score_groups": [
+      {
+        "score": 0.965,
+        "n_in_top20": 2,
+        "n_all": 2
+      },
+      {
+        "score": 0.925,
+        "n_in_top20": 4,
+        "n_all": 4
+      },
+      {
+        "score": 0.9236334232780302,
+        "n_in_top20": 1,
+        "n_all": 1
+      },
+      {
+        "score": 0.917125,
+        "n_in_top20": 1,
+        "n_all": 1
+      },
+      {
+        "score": 0.8978905103395229,
+        "n_in_top20": 1,
+        "n_all": 1
+      },
+      {
+        "score": 0.885,
+        "n_in_top20": 5,
+        "n_all": 5
+      },
+      {
+        "score": 0.8771249999999999,
+        "n_in_top20": 1,
+        "n_all": 1
+      },
+      {
+        "score": 0.862102688018719,
+        "n_in_top20": 1,
+        "n_all": 1
+      },
+      {
+        "score": 0.8537628084917901,
+        "n_in_top20": 1,
+        "n_all": 1
+      },
+      {
+        "score": 0.8503180424869103,
+        "n_in_top20": 1,
+        "n_all": 1
+      },
+      {
+        "score": 0.8474113490440556,
+        "n_in_top20": 1,
+        "n_all": 1
+      },
+      {
+        "score": 0.8450000000000001,
+        "n_in_top20": 1,
+        "n_all": 3
+      }
+    ],
+    "cutoff": 0.8450000000000001,
+    "cutoff_gids": [
+      "100000004400305100",
+      "100000005704413100",
+      "100000005933757100"
+    ],
+    "turnover_baseline_overlap": 9,
+    "spearman_volume": 0.4054763525428057,
+    "volume_tiebreak_overlap": 20,
+    "volume_tiebreak_positions_changed": 6,
+    "volume_tiebreak_primary_roles": {
+      "coordinator": 18,
+      "distributor": 2
+    },
+    "volume_tiebreak_added": [],
+    "volume_tiebreak_removed": []
+  },
+  "showcase_consolidator": {
+    "gid": "100000002398779100",
+    "rank": 30,
+    "in_deg": 13,
+    "out_deg": 1,
+    "in_kzt": 1095690.0,
+    "out_kzt": 66000.0,
+    "ratio": 0.06023601566136407,
+    "priority": 0.8117184392469295,
+    "volume_tiebreak_enters_top20": false
+  },
+  "frontier": {
+    "roles": {
+      "peripheral": 441,
+      "consolidator": 3
+    },
+    "in_degree_one": 434,
+    "incoming_share": 0.15488852611382875,
+    "edge_hop4_amount_share": 0.2345511675996624,
+    "edge_hop4_count_share": 0.2433472266752164
+  },
+  "isolates": {
+    "roles": {
+      "peripheral": 19
+    },
+    "priority_scores": [
+      0.0
+    ]
+  },
+  "scc": {
+    "size": 85,
+    "external_edges": 875,
+    "external_recipients": 642
+  },
+  "seed_payers": {
+    "100000003684369100": {
+      "seed_payers": 1,
+      "payers": 24,
+      "payer_communities": 6,
+      "reachable_seeds": 6
+    },
+    "100000005382566100": {
+      "seed_payers": 6,
+      "payers": 7,
+      "payer_communities": 2,
+      "reachable_seeds": 11
+    }
+  },
+  "fifo_80pct_outgoing_counts": {
+    "naive": 193,
+    "same_day_assumed": 116,
+    "strict": 47
+  },
+  "one_payer_out_rates": {
+    "1": 0.1987179487179487,
+    "2": 0.27299703264094954,
+    "3": 0.334841628959276
+  },
+  "brier": {
+    "bucket": 0.24104944863890954,
+    "constant": 0.23103552548438364
+  },
+  "cluster_summary": {
+    "count": 89,
+    "sum_internal_tiyn": 33125449197,
+    "distinct_hypothesis": 71
+  },
+  "evidence": {
+    "max_len": 149,
+    "empty_count": 0
+  }
+}

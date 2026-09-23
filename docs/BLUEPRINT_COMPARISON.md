@@ -130,6 +130,8 @@ The Russian regulator reference is real: the official document contains examples
 
 The current [AFM Order No. 13 page](https://adilet.zan.kz/rus/docs/V2200026924) returned a JavaScript-only shell in this review. I could not independently establish the current exact mapping of codes 12/17/24/27 from that official text. This report does not certify that mapping or assert that the codes are fabricated. Keep Kazakhstan-specific vocabulary in the product, and verify any legal mapping before presenting it as an account-level finding.
 
+**Follow-up verification, 23 September 2026:** the [official legacy Adilet page, Appendix 2](https://old.adilet.zan.kz/rus/docs/V2200026924) exposes the text and confirms codes 12/17/24/27. Its revision note also includes the amendment dated 16 June 2026, No. 12. This resolves the source-access limitation above. The dataset still does not establish the circumstances needed to assign those legal codes to accounts; the 5,000 KZT extraction threshold is not a regulatory threshold. See the [release review and adoption decision](RELEASE_REVIEW_RESPONSE_2026-09-23.md).
+
 ### 6. Choose the viewer for the actual workflow
 
 Streamlit is a reasonable choice for a team that can build and maintain its complete workflow faster in Python. Tabs, tables, and text inputs are useful conveniences. Neither blueprint supplies a measured development-time comparison that establishes a universal winner.
