@@ -17,6 +17,8 @@ import pandas as pd
 import networkx as nx
 
 ROLES = ["coordinator", "distributor", "consolidator", "transit", "terminal", "peripheral"]
+LOUVAIN_RESOLUTION = 1.0
+LOUVAIN_SEED = 42
 
 
 # ---------------------------------------------------------------- загрузка
@@ -556,6 +558,56 @@ def compute_priority(df: pd.DataFrame):
         "sort_order": ["priority_score desc (unrounded)", "numeric gid asc"],
     }
     return result, priority_parameters
+
+
+def _undirected_projection(G: nx.DiGraph) -> nx.Graph:
+    """Project directed edge amounts into undirected KZT weights."""
+    projection = nx.Graph()
+    projection.add_nodes_from(sorted(int(gid) for gid in G.nodes))
+
+    weight_tiyn_by_pair = {}
+    for src, dst, data in sorted(G.edges(data=True), key=lambda edge: (int(edge[0]), int(edge[1]))):
+        if "sum_tiyn" not in data:
+            raise ValueError("graph edges must include integer sum_tiyn")
+        amount = data["sum_tiyn"]
+        if isinstance(amount, bool) or not isinstance(amount, (int, np.integer)):
+            raise ValueError("graph edge sum_tiyn must be an integer")
+        amount = int(amount)
+        if amount <= 0:
+            raise ValueError("graph edge sum_tiyn must be positive")
+        pair = (min(int(src), int(dst)), max(int(src), int(dst)))
+        weight_tiyn_by_pair[pair] = weight_tiyn_by_pair.get(pair, 0) + amount
+
+    for (src, dst), amount_tiyn in sorted(weight_tiyn_by_pair.items()):
+        projection.add_edge(src, dst, weight=amount_tiyn / 100.0)
+    return projection
+
+
+def cluster_nodes(G: nx.DiGraph) -> dict[int, int]:
+    """Cluster the undirected projection and assign reproducible numeric IDs."""
+    projection = _undirected_projection(G)
+    nonisolates = sorted(gid for gid, degree in projection.degree() if degree > 0)
+
+    groups = []
+    if nonisolates:
+        active_projection = projection.subgraph(nonisolates).copy()
+        for community in nx.community.louvain_communities(
+            active_projection,
+            weight="weight",
+            resolution=LOUVAIN_RESOLUTION,
+            seed=LOUVAIN_SEED,
+        ):
+            community_graph = active_projection.subgraph(community)
+            groups.extend(set(component) for component in nx.connected_components(community_graph))
+
+    isolates = {gid for gid, degree in projection.degree() if degree == 0}
+    groups.extend({gid} for gid in isolates)
+    groups.sort(key=lambda group: min(group))
+    return {
+        int(gid): cluster_id
+        for cluster_id, group in enumerate(groups)
+        for gid in group
+    }
 
 
 # ---------------------------------------------------------------- выгрузки
