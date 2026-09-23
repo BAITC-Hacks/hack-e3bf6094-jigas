@@ -7,6 +7,7 @@ from importlib.metadata import version
 import json
 from pathlib import Path
 import platform
+import shutil
 import sys
 import tempfile
 import time
@@ -43,6 +44,7 @@ def run_pipeline(data_dir: Path, out_dir: Path) -> dict:
     started = time.perf_counter()
     timings = {}
     phase = "load"
+    stage = None
     try:
         checkpoint = time.perf_counter()
         edges, nodes, tx = load(data_dir)
@@ -162,6 +164,8 @@ def run_pipeline(data_dir: Path, out_dir: Path) -> dict:
         print(f"Validated release: {out_dir} ({len(report['nodes'])} nodes, {len(report['clusters'])} clusters)")
         return validation
     except Exception as exc:
+        if stage is not None and stage.parent == out_dir and stage.name.startswith(".staging."):
+            shutil.rmtree(stage, ignore_errors=True)
         raise RuntimeError(f"{phase}: {exc}") from exc
 
 
