@@ -4,11 +4,12 @@
   "dataset": {
     "period_start": "2026-07-01",
     "period_end": "2026-07-31",
-    "n_nodes": 8,
-    "n_edges": 8,
-    "n_tx": 12,
+    "node_count": 8,
+    "edge_count": 8,
+    "transaction_count": 12,
     "n_seed": 2,
-    "turnover_tiyn": 153000000,
+    "sum_tiyn": 153000000,
+    "sha256_files": {},
     "limitations": "Учебная схема: искусственные клиенты и суммы. Граф ограничен четырьмя направленными шагами от seed; рёбра ниже 5 000 KZT не включены."
   },
   "parameters": {
