@@ -237,6 +237,22 @@ def test_graph_features_and_report(starter: Any) -> None:
             "gid=40: report should expose the depth boundary warning")
     require("isolated" in node_json_by_gid["80"].get("warnings", []),
             "gid=80: report should expose the isolated-node warning")
+    scores_by_gid = {
+        node["gid"]: float(node["priority_score"])
+        for node in nodes_json
+    }
+    report_top = report.get("top_nodes", [])
+    report_top_gids = [item.get("gid") for item in report_top]
+    expected_report_top = sorted(
+        scores_by_gid,
+        key=lambda gid: (-scores_by_gid[gid], int(gid)),
+    )[:20]
+    require(report_top_gids == expected_report_top,
+            "build_report top_nodes must use unrounded score desc then numeric gid asc")
+    require(scores_by_gid[str(BIG_GID)] == scores_by_gid["60"],
+            "synthetic seeds BIG_GID and 60 should create an exact priority tie")
+    require(report_top_gids.index("60") < report_top_gids.index(str(BIG_GID)),
+            "equal priority must be broken by numeric gid, not lexicographic string order")
     for edge_json in report.get("edges", []):
         require(isinstance(edge_json["src"], str) and isinstance(edge_json["dst"], str),
                 "build_report must serialize edge endpoints as strings")
