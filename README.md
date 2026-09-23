@@ -2,11 +2,11 @@
 
 Локальный batch-инструмент для AML-аналитика. Он читает три Parquet-файла, строит ориентированный граф, рассчитывает структурные гипотезы и выпускает три CSV вместе с React-отчётом.
 
-> **Статус:** React/Vite, `report.json` и localhost viewer — следующий кандидат выпуска. Пять Docker прогонов и headless browser smoke из [validation.md](docs/validation.md) относятся к предыдущему P0 SHA `aed8e63`; они не являются приёмкой React-миграции. Кандидат `feat/react-integration@3f0e615` пока ждёт передачу готового frontend build и полного Docker/browser smoke. Команды ниже описывают целевой сценарий SPEC 1.4; финальные результаты и версии среды нужно сверить после приёмки.
+> **Статус:** React/Vite, `report.json` и localhost viewer проверены на официальных данных в Docker. Пять выпусков, контрактные тесты и локальный Playwright smoke прошли на ветке `feat/react-integration`; точные результаты и ограничения — в [протоколе](docs/validation.md).
 
 ## Быстрый запуск для жюри
 
-После handoff React build выполните из корня репозитория:
+Выполните из корня репозитория:
 
 ```powershell
 docker compose build pipeline
@@ -15,7 +15,7 @@ docker compose run --rm pipeline
 docker compose run --rm --entrypoint python pipeline test_contract.py --data /app/data --out /app/out
 ```
 
-В отдельном терминале запустите `docker compose up viewer`, затем откройте `http://127.0.0.1:8000/report.html`. До принятия кандидата эти команды описывают целевой запуск, а не уже пройденную проверку. Точные результаты и проверенные SHA ведутся в [протоколе](docs/validation.md).
+В отдельном терминале запустите `docker compose up viewer`, затем откройте `http://127.0.0.1:8000/report.html`. Точные результаты и проверенные SHA ведутся в [протоколе](docs/validation.md).
 
 ## Стек и требования
 
@@ -27,7 +27,7 @@ docker compose run --rm --entrypoint python pipeline test_contract.py --data /ap
 
 ## Запуск в Docker
 
-Из корня репозитория соберите runtime image. После передачи frontend build эта команда собирает его на Node-стадии:
+Из корня репозитория соберите runtime image. Frontend собирается на Node-стадии:
 
 ```powershell
 docker compose build pipeline
