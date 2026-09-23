@@ -224,11 +224,24 @@ def test_graph_features_and_report(starter: Any) -> None:
     require(isinstance(report, dict), "build_report must return a JSON-compatible dict")
     require(report.get("schema_version") == "1.0", "report schema_version must be '1.0'")
     nodes_json = report.get("nodes", [])
+    try:
+        json.dumps(report, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ContractFailure("build_report must contain JSON-safe values without NaN/Infinity") from exc
+    require(all(isinstance(node.get("gid"), str) for node in nodes_json),
+            "build_report must serialize every node gid as a string")
     require(any(node.get("gid") == str(BIG_GID) for node in nodes_json),
             f"build_report must serialize gid={BIG_GID} as its exact decimal string")
+    node_json_by_gid = {node["gid"]: node for node in nodes_json}
+    require("boundary" in node_json_by_gid["40"].get("warnings", []),
+            "gid=40: report should expose the depth boundary warning")
+    require("isolated" in node_json_by_gid["80"].get("warnings", []),
+            "gid=80: report should expose the isolated-node warning")
     for edge_json in report.get("edges", []):
         require(isinstance(edge_json["src"], str) and isinstance(edge_json["dst"], str),
                 "build_report must serialize edge endpoints as strings")
+    require(all(isinstance(node.get("gid"), str) for node in report.get("top_nodes", [])),
+            "build_report must serialize every top_nodes gid as a string")
     for cluster_json in report.get("clusters", []):
         require(all(isinstance(gid, str) for gid in cluster_json.get("top_gids", [])),
                 "build_report must serialize cluster top_gids as strings")
